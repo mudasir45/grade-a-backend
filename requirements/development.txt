@@ -1,0 +1,12 @@
+-r base.txt
+
+# Debugging
+django-debug-toolbar>=4.2.0
+
+# Code Quality
+black>=24.1.1
+flake8>=7.0.0
+
+# Development Tools
+django-extensions>=3.2.3
+watchdog>=3.0.0 

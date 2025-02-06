@@ -1,0 +1,15 @@
+-r base.txt
+
+# WSGI Server
+gunicorn>=21.2.0
+
+# Static/Media Files Storage
+django-storages>=1.14.2
+boto3>=1.34.34
+
+# Monitoring
+sentry-sdk>=1.39.1
+
+# Performance
+whitenoise>=6.6.0
+django-cache-memoize>=0.2.0 
