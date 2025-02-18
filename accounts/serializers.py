@@ -20,7 +20,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             'email', 'username', 'password', 'first_name', 'last_name',
-            'phone_number', 'address', 'user_type'
+            'phone_number', 'address', 'user_type', 'country'
         )
 
     def create(self, validated_data):

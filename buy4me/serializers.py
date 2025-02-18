@@ -12,7 +12,7 @@ class Buy4MeItemSerializer(serializers.ModelSerializer):
         model = Buy4MeItem
         fields = [
             'id', 'product_name', 'product_url', 'quantity',
-            'color', 'size', 'unit_price', 'currency',
+            'color', 'size', 'unit_price', 'currency', 'notes',
             'total_price', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
@@ -32,4 +32,4 @@ class Buy4MeRequestSerializer(serializers.ModelSerializer):
 class Buy4MeRequestCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Buy4MeRequest
-        fields = ['shipping_address', 'notes'] 
+        fields = ['shipping_address', 'notes', "id"] 

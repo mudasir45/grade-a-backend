@@ -43,6 +43,9 @@ urlpatterns = [
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     path('api/buy4me/', include('buy4me.urls')),
+    path('api/shipments/', include('shipments.urls')),
+    path('api/shipping-rates/', include('shipping_rates.urls')),
+    path('api/payments/', include('payments.urls')),
 ]
     
 if settings.DEBUG:

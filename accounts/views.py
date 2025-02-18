@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
-
+from rest_framework import generics
 from .serializers import UserSerializer, UserCreateSerializer
 
 User = get_user_model()
@@ -58,3 +58,15 @@ class UserViewSet(viewsets.ModelViewSet):
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs) 
+    
+    
+# create the singup view 
+
+@extend_schema(tags=['users'])
+class SignUpView(generics.CreateAPIView):
+    serializer_class = UserCreateSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+    

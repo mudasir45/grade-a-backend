@@ -20,6 +20,7 @@ class User(AbstractUser):
     phone_number = models.CharField(max_length=15, blank=True)
     address = models.TextField(blank=True)
     is_verified = models.BooleanField(default=False)
+    country = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

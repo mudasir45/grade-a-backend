@@ -2,8 +2,9 @@ from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
+from core.utils import SixDigitIDMixin
 
-class Buy4MeRequest(models.Model):
+class Buy4MeRequest(SixDigitIDMixin, models.Model):
     class Status(models.TextChoices):
         DRAFT = 'DRAFT', _('Draft')
         SUBMITTED = 'SUBMITTED', _('Submitted')
@@ -12,6 +13,7 @@ class Buy4MeRequest(models.Model):
         WAREHOUSE_ARRIVED = 'WAREHOUSE_ARRIVED', _('Warehouse Arrived')
         SHIPPED_TO_CUSTOMER = 'SHIPPED_TO_CUSTOMER', _('Shipped to Customer')
         COMPLETED = 'COMPLETED', _('Completed')
+        CANCELLED = 'CANCELLED', _('Cancelled')
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -50,7 +52,7 @@ class Buy4MeRequest(models.Model):
         self.save(update_fields=['total_cost'])
         return self.total_cost
 
-class Buy4MeItem(models.Model):
+class Buy4MeItem(SixDigitIDMixin, models.Model):
     buy4me_request = models.ForeignKey(
         Buy4MeRequest,
         on_delete=models.CASCADE,
@@ -61,6 +63,7 @@ class Buy4MeItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     color = models.CharField(max_length=50, blank=True)
     size = models.CharField(max_length=50, blank=True)
+    notes = models.TextField(blank=True)
     unit_price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -78,4 +81,7 @@ class Buy4MeItem(models.Model):
 
     @property
     def total_price(self):
-        return self.quantity * self.unit_price
+        """Calculate total price only if both quantity and unit_price exist"""
+        if self.quantity is not None and self.unit_price is not None:
+            return self.quantity * self.unit_price
+        return 0  # or return None if you prefer

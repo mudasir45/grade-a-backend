@@ -24,6 +24,9 @@ SECRET_KEY = env("SECRET_KEY")
 
 # Application definition
 INSTALLED_APPS = [
+    # Jazzmin admin theme
+    'jazzmin',
+    
     # Django apps
     'django.contrib.admin',
     'django.contrib.auth',
@@ -44,6 +47,8 @@ INSTALLED_APPS = [
     'reports',
     'shipments',
     'vendors',
+    'shipping_rates',
+    'payments',
 ]
 
 MIDDLEWARE = [
@@ -95,6 +100,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Custom User Model
 AUTH_USER_MODEL = 'accounts.User'
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY")
+STRIPE_PUBLISHABLE_KEY = env("STRIPE_PUBLISHABLE_KEY")  
+
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
@@ -166,4 +174,125 @@ SPECTACULAR_SETTINGS = {
             }
         }
     ],
+}
+
+# Jazzmin Settings
+JAZZMIN_SETTINGS = {
+    # title of the window (Will default to current_admin_site.site_title if absent or None)
+    "site_title": "Grade-A Express Admin",
+    # Title on the login screen (19 chars max) (defaults to current_admin_site.site_header if absent or None)
+    "site_header": "Grade-A Express",
+    # Title on the brand (19 chars max) (defaults to current_admin_site.site_header if absent or None)
+    "site_brand": "Grade-A Express",
+    # Logo to use for your site, must be present in static files, used for brand on top left
+    "site_logo": "img/logo.png",
+    # Welcome text on the login screen
+    "welcome_sign": "Welcome to Grade-A Express",
+    # Copyright on the footer
+    "copyright": "Grade-A Express Ltd",
+    
+    # The model admin to search from the search bar
+    "search_model": "accounts.User",
+    
+    # Field name on user model that contains avatar ImageField/URLField/Charfield or a callable that receives the user
+    "user_avatar": None,
+    
+    ############
+    # Top Menu #
+    ############
+    # Links to put along the top menu
+    "topmenu_links": [
+        {"name": "Home", "url": "admin:index", "permissions": ["auth.view_user"]},
+        {"name": "Support", "url": "https://github.com/yourusername/grade-a-express", "new_window": True},
+        {"model": "accounts.User"},
+        {"app": "books"},
+    ],
+    
+    #############
+    # Side Menu #
+    #############
+    # Whether to display the side menu
+    "show_sidebar": True,
+    # Whether to aut expand the menu
+    "navigation_expanded": True,
+    
+    # Custom icons for side menu apps/models
+    "icons": {
+        "accounts": "fas fa-users-cog",
+        "accounts.user": "fas fa-user",
+        "auth.Group": "fas fa-users",
+        "shipments.ShipmentRequest": "fas fa-shipping-fast",
+        "shipments.ShipmentTracking": "fas fa-map-marker-alt",
+        "buy4me.Buy4MeRequest": "fas fa-shopping-cart",
+        "buy4me.Buy4MeItem": "fas fa-box",
+        "shipping_rates.Country": "fas fa-globe",
+        "shipping_rates.ShippingZone": "fas fa-map",
+        "shipping_rates.ServiceType": "fas fa-truck",
+        "shipping_rates.WeightBasedRate": "fas fa-balance-scale",
+        "shipping_rates.DimensionalFactor": "fas fa-cube",
+        "shipping_rates.AdditionalCharge": "fas fa-plus-circle",
+    },
+    
+    # Icons that are used when one is not manually specified
+    "default_icon_parents": "fas fa-chevron-circle-right",
+    "default_icon_children": "fas fa-circle",
+    
+    #################
+    # Related Modal #
+    #################
+    # Use modals instead of popups
+    "related_modal_active": True,
+    
+    #############
+    # UI Tweaks #
+    #############
+    # Relative paths to custom CSS/JS scripts (must be present in static files)
+    "custom_css": None,
+    "custom_js": None,
+    # Whether to show the UI customizer on the sidebar
+    "show_ui_builder": True,
+    
+    ###############
+    # Change view #
+    ###############
+    # Render out the change view as a single form, or in tabs, current options are
+    # - single
+    # - horizontal_tabs (default)
+    # - vertical_tabs
+    # - collapsible
+    # - carousel
+    "changeform_format": "horizontal_tabs",
+}
+
+# UI Customizer
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-primary",
+    "accent": "accent-primary",
+    "navbar": "navbar-dark",
+    "no_navbar_border": False,
+    "navbar_fixed": False,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": False,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": False,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "default",
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-primary",
+        "secondary": "btn-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success"
+    }
 } 
