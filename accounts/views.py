@@ -6,7 +6,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics
 from .serializers import UserSerializer, UserCreateSerializer
-
+from shipping_rates.models import Country
 User = get_user_model()
 
 @extend_schema(tags=['users'])

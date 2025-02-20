@@ -36,7 +36,7 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ShipmentRequest
         fields = [
-            'sender_name', 'sender_email', 'sender_phone',
+            'sender_name', 'tracking_number', 'sender_email', 'sender_phone',
             'sender_address', 'sender_country',
             'recipient_name', 'recipient_email', 'recipient_phone',
             'recipient_address', 'recipient_country',

@@ -9,14 +9,14 @@ from .models import User
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ('email', 'username', 'user_type', 'is_active', 'is_staff', 'date_joined')
+    list_display = ('email', 'username', 'user_type', 'is_active', 'is_staff', 'date_joined', 'id')
     list_filter = ('user_type', 'is_active', 'is_staff', 'is_verified')
     search_fields = ('email', 'username', 'first_name', 'last_name')
     ordering = ('-date_joined',)
     
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
-        (_('Personal info'), {'fields': ('first_name', 'last_name', 'phone_number', 'address', 'country')}),
+        (_('Personal info'), {'fields': ('first_name', 'last_name', 'phone_number', 'address', 'country', 'default_shipping_method', 'preferred_currency')}),
         (_('Permissions'), {
             'fields': ('user_type', 'is_active', 'is_staff', 'is_superuser', 'is_verified', 'groups', 'user_permissions'),
         }),

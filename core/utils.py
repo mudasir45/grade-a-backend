@@ -50,4 +50,13 @@ class SixDigitIDMixin(models.Model):
             return (prefix + model_name[0] * (3 - len(prefix)))[:3]
             
         # Fallback: first 3 letters of model name
-        return model_name[:3].upper() 
+        return model_name[:3].upper()
+
+def generate_unique_id(prefix):
+    """
+    Generate a unique ID with format: PREFIX + YY + 4 random digits
+    Example: USR231234
+    """
+    year = str(timezone.now().year)[-2:]
+    sequence = str(random.randint(1000, 9999))
+    return f"{prefix}{year}{sequence}" 

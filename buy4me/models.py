@@ -15,6 +15,13 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
         COMPLETED = 'COMPLETED', _('Completed')
         CANCELLED = 'CANCELLED', _('Cancelled')
 
+    class PaymentStatus(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        PAID = 'PAID', _('Paid')
+        REFUNDED = 'REFUNDED', _('Refunded')
+        CANCELLED = 'CANCELLED', _('Cancelled')
+        
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -24,6 +31,11 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
         max_length=20,
         choices=Status.choices,
         default=Status.DRAFT
+    )
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.PENDING
     )
     total_cost = models.DecimalField(
         max_digits=10,

@@ -7,7 +7,7 @@ from .models import (
 
 @admin.register(Country)
 class CountryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'code', 'country_type', 'zone_count', 'is_active']
+    list_display = ['name', 'code', 'country_type', 'zone_count', 'is_active', 'id']
     list_filter = ['is_active', 'country_type']
     readonly_fields = ['id']
     search_fields = ['name', 'code']
