@@ -28,6 +28,9 @@ class Country(SixDigitIDMixin, models.Model):
                 name='unique_country_code_type'
             )
         ]
+    def save(self, *args, **kwargs):
+        self.code = self.code.upper()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name} ({self.code}) - {self.get_country_type_display()}"

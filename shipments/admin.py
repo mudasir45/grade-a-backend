@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.utils import timezone
 from django.contrib import messages
+from django.urls import reverse
 from .models import ShipmentRequest, ShipmentTracking
 
 class ShipmentTrackingInline(admin.TabularInline):
@@ -15,7 +16,7 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
     list_display = [
         'tracking_number', 'status_badge', 'current_location',
         'sender_name', 'recipient_name', 'service_type',
-        'total_cost_display', 'created_at'
+        'total_cost_display', 'receipt_download', 'created_at'
     ]
     list_filter = ['status', 'service_type', 'created_at']
     search_fields = [
@@ -24,7 +25,7 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
     ]
     readonly_fields = [
         'tracking_number', 'tracking_history',
-        'created_at', 'updated_at'
+        'created_at', 'updated_at', 'receipt_download'
     ]
     inlines = [ShipmentTrackingInline]
     
@@ -55,6 +56,15 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
     def total_cost_display(self, obj):
         return format_html('<b>${}</b>', obj.total_cost)
     total_cost_display.short_description = 'Total Cost'
+
+    def receipt_download(self, obj):
+        if obj.receipt:
+            return format_html(
+                '<a class="button" href="{}" target="_blank">Download Receipt</a>',
+                obj.receipt.url
+            )
+        return "No receipt available"
+    receipt_download.short_description = "Receipt"
 
     def mark_as_processing(self, request, queryset):
         self._update_status(
@@ -134,7 +144,7 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         ('Tracking Information', {
             'fields': (
                 'tracking_number', 'status', 'current_location',
-                'estimated_delivery', 'tracking_history'
+                'estimated_delivery', 'tracking_history', 'receipt_download'
             )
         }),
         ('Sender Information', {

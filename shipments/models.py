@@ -6,6 +6,13 @@ from core.utils import SixDigitIDMixin
 from shipping_rates.models import ServiceType, Country
 from django.utils.crypto import get_random_string
 from django.utils import timezone
+from django.core.files.base import ContentFile
+from model_utils import FieldTracker
+from .utils import generate_shipment_receipt
+
+def shipment_receipt_path(instance, filename):
+    """Generate path for shipment receipts."""
+    return f'shipment_receipts/{instance.tracking_number}/{filename}'
 
 class ShipmentRequest(SixDigitIDMixin, models.Model):
     class Status(models.TextChoices):
@@ -15,11 +22,22 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         DELIVERED = 'DELIVERED', _('Delivered')
         CANCELLED = 'CANCELLED', _('Cancelled')
 
+    # Field tracker
+    tracker = FieldTracker()
+
     # User Information
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='shipments'
+    )
+
+    # Receipt PDF
+    receipt = models.FileField(
+        upload_to=shipment_receipt_path,
+        null=True,
+        blank=True,
+        help_text=_('PDF receipt for the shipment')
     )
 
     # Sender Information
@@ -167,6 +185,8 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         return f"Shipment #{self.tracking_number or self.id} - {self.status}"
 
     def save(self, *args, **kwargs):
+        is_new = not self.pk
+        
         if not self.tracking_number:
             # Generate unique tracking number
             prefix = 'TRK'
@@ -190,7 +210,19 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
             self.total_additional_charges
         )
         
+        # Save the model first
         super().save(*args, **kwargs)
+        
+        # Generate receipt if it's a new shipment or status has changed
+        if is_new or self.tracker.has_changed('status'):
+            # Generate PDF receipt
+            pdf_content = generate_shipment_receipt(self)
+            
+            # Save the PDF
+            filename = f'shipment_receipt_{self.tracking_number}.pdf'
+            if self.receipt:
+                self.receipt.delete(save=False)  # Delete old receipt if exists
+            self.receipt.save(filename, ContentFile(pdf_content), save=True)
 
     def update_tracking(self, status, location, description=None):
         """Update shipment tracking information"""
