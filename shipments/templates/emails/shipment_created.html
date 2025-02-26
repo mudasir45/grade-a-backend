@@ -1,0 +1,47 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Shipment Created Successfully{% endblock %}
+
+{% block content %}
+<h2>Shipment #{{ shipment.tracking_number }} has been created</h2>
+
+<div class="tracking-info">
+    <p><strong>Status:</strong> <span class="status-badge">{{ shipment.get_status_display }}</span></p>
+    <p><strong>Estimated Delivery:</strong> {{ shipment.estimated_delivery|date:"d/m/Y" }}</p>
+</div>
+
+<h3>Shipment Details</h3>
+<p><strong>From:</strong><br>
+{{ shipment.sender_name }}<br>
+{{ shipment.sender_address }}<br>
+{{ shipment.sender_country.name }}</p>
+
+<p><strong>To:</strong><br>
+{{ shipment.recipient_name }}<br>
+{{ shipment.recipient_address }}<br>
+{{ shipment.recipient_country.name }}</p>
+
+<h3>Package Information</h3>
+<p>
+    <strong>Package Type:</strong> {{ shipment.package_type }}<br>
+    <strong>Weight:</strong> {{ shipment.weight }} kg<br>
+    <strong>Dimensions:</strong> {{ shipment.length }}x{{ shipment.width }}x{{ shipment.height }} cm
+</p>
+
+<h3>Cost Breakdown</h3>
+<p>
+    <strong>Base Rate:</strong> ${{ shipment.base_rate|floatformat:2 }}<br>
+    <strong>Weight Charge:</strong> ${{ shipment.weight_charge|floatformat:2 }}<br>
+    <strong>Service Charge:</strong> ${{ shipment.service_charge|floatformat:2 }}<br>
+    <strong>Additional Charges:</strong> ${{ shipment.total_additional_charges|floatformat:2 }}<br>
+    <strong>Total Cost:</strong> ${{ shipment.total_cost|floatformat:2 }}
+</p>
+
+<p style="text-align: center;">
+    <a href="https://grade-a-express.com/track/{{ shipment.tracking_number }}" class="button">Track Your Shipment</a>
+</p>
+
+<p style="font-size: 14px; color: #666;">
+    A copy of your shipment receipt is attached to this email. You can also download it from your account dashboard.
+</p>
+{% endblock %} 

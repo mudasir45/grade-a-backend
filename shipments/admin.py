@@ -3,13 +3,9 @@ from django.utils.html import format_html
 from django.utils import timezone
 from django.contrib import messages
 from django.urls import reverse
-from .models import ShipmentRequest, ShipmentTracking
+from .models import ShipmentRequest
 
-class ShipmentTrackingInline(admin.TabularInline):
-    model = ShipmentTracking
-    extra = 0
-    readonly_fields = ['timestamp']
-    ordering = ['-timestamp']
+
 
 @admin.register(ShipmentRequest)
 class ShipmentRequestAdmin(admin.ModelAdmin):
@@ -27,7 +23,6 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         'tracking_number', 'tracking_history',
         'created_at', 'updated_at', 'receipt_download'
     ]
-    inlines = [ShipmentTrackingInline]
     
     actions = [
         'mark_as_processing',
@@ -182,25 +177,3 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-
-@admin.register(ShipmentTracking)
-class ShipmentTrackingAdmin(admin.ModelAdmin):
-    list_display = [
-        'shipment_link', 'status', 'location', 
-        'timestamp'
-    ]
-    list_filter = ['status', 'timestamp']
-    search_fields = [
-        'shipment__tracking_number', 'location', 
-        'status', 'description'
-    ]
-    readonly_fields = ['timestamp']
-    
-    def shipment_link(self, obj):
-        url = f"../shipmentrequest/{obj.shipment.id}"
-        return format_html(
-            '<a href="{}">{}</a>',
-            url,
-            obj.shipment.tracking_number
-        )
-    shipment_link.short_description = 'Shipment'

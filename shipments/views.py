@@ -4,11 +4,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Prefetch
 from drf_spectacular.utils import extend_schema, OpenApiParameter
-from .models import ShipmentRequest, ShipmentTracking
+from .models import ShipmentRequest
 from .serializers import (
     ShipmentRequestSerializer,
     ShipmentCreateSerializer,
-    ShipmentTrackingSerializer
 )
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
@@ -216,15 +215,15 @@ class ShipmentRequestViewSet(viewsets.ModelViewSet):
         summary="Add tracking update",
         description="Add a new tracking update to the shipment"
     )
-    @action(detail=True, methods=['post'])
-    def add_tracking(self, request, pk=None):
-        shipment = self.get_object()
-        serializer = ShipmentTrackingSerializer(data=request.data)
+    # @action(detail=True, methods=['post'])
+    # def add_tracking(self, request, pk=None):
+    #     shipment = self.get_object()
+    #     serializer = ShipmentTrackingSerializer(data=request.data)
         
-        if serializer.is_valid():
-            serializer.save(shipment=shipment)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    #     if serializer.is_valid():
+    #         serializer.save(shipment=shipment)
+    #         return Response(serializer.data, status=status.HTTP_201_CREATED)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @extend_schema(
         summary="Update shipment status",

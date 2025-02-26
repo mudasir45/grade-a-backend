@@ -1,0 +1,27 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Shipment Status Update{% endblock %}
+
+{% block content %}
+<h2>Your Shipment Status Has Been Updated</h2>
+
+<div class="tracking-info">
+    <p><strong>Tracking Number:</strong> {{ shipment.tracking_number }}</p>
+    <p><strong>New Status:</strong> <span class="status-badge">{{ shipment.get_status_display }}</span></p>
+    <p><strong>Current Location:</strong> {{ shipment.current_location|default:"Not available" }}</p>
+    <p><strong>Updated At:</strong> {{ shipment.updated_at|date:"d/m/Y H:i" }}</p>
+    <p><strong>Estimated Delivery:</strong> {{ shipment.estimated_delivery|date:"d/m/Y" }}</p>
+</div>
+
+<h3>Shipment Route</h3>
+<p><strong>From:</strong> {{ shipment.sender_country.name }}<br>
+<strong>To:</strong> {{ shipment.recipient_country.name }}</p>
+
+<p style="text-align: center;">
+    <a href="https://grade-a-express.com/track/{{ shipment.tracking_number }}" class="button">View Detailed Tracking</a>
+</p>
+
+<p style="font-size: 14px; color: #666;">
+    You will receive further updates when the status of your shipment changes.
+</p>
+{% endblock %} 

@@ -1,15 +1,10 @@
 from rest_framework import serializers
-from .models import ShipmentRequest, ShipmentTracking
+from .models import ShipmentRequest
 from shipping_rates.models import ShippingZone, WeightBasedRate, DimensionalFactor, Country, ServiceType
 from decimal import Decimal
 
-class ShipmentTrackingSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ShipmentTracking
-        fields = ['location', 'status', 'description']
 
 class ShipmentRequestSerializer(serializers.ModelSerializer):
-    tracking_updates = ShipmentTrackingSerializer(many=True, read_only=True)
     user = serializers.StringRelatedField(read_only=True)
     # dimensions = serializers.JSONField(required=True)
 
