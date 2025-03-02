@@ -1,0 +1,60 @@
+{% extends "emails/base_email.html" %} {% block title %}New Contact Form
+Submission{% endblock %} {% block content %}
+<h2>New Contact Form Submission</h2>
+
+<p>A new contact form has been submitted on the Grade-A Express website.</p>
+
+<div
+  style="
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 15px 0;
+  "
+>
+  <h3>Contact Details:</h3>
+  <p><strong>Name:</strong> {{ contact.name }}</p>
+  <p>
+    <strong>Email:</strong>
+    <a href="mailto:{{ contact.email }}">{{ contact.email }}</a>
+  </p>
+  {% if contact.phone %}
+  <p><strong>Phone:</strong> {{ contact.phone }}</p>
+  {% endif %}
+  <p><strong>Subject:</strong> {{ contact.subject }}</p>
+  <p>
+    <strong>Submitted on:</strong> {{ contact.created_at|date:"F j, Y, g:i a" }}
+  </p>
+</div>
+
+<div
+  style="
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 15px 0;
+  "
+>
+  <h3>Message:</h3>
+  <p>{{ contact.message|linebreaks }}</p>
+</div>
+
+<p>Please respond to this inquiry as soon as possible.</p>
+
+<a
+  href="{{ admin_url }}"
+  class="button"
+  style="
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #1a237e;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    margin: 20px 0;
+  "
+  >View in Admin Panel</a
+>
+
+<p>This is an automated notification.</p>
+{% endblock %}

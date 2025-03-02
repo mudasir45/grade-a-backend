@@ -1,7 +1,9 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from core.utils import generate_unique_id, SixDigitIDMixin
+
+from core.utils import SixDigitIDMixin, generate_unique_id
+
 
 class User(AbstractUser):
     """
@@ -83,7 +85,37 @@ class UserCountry(models.Model):
         self.code = self.code.upper()
         super().save(*args, **kwargs)
         
-        
     def __str__(self):
         return self.name
+    
+class Contact(SixDigitIDMixin, models.Model):
+    """
+    Model for storing contact form submissions
+    """
+    class ContactStatus(models.TextChoices):
+        NEW = 'NEW', _('New')
+        IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
+        RESOLVED = 'RESOLVED', _('Resolved')
+    
+    name = models.CharField(max_length=100)
+    email = models.EmailField()
+    phone = models.CharField(max_length=20, blank=True)
+    subject = models.CharField(max_length=200)
+    message = models.TextField()
+    status = models.CharField(
+        max_length=20,
+        choices=ContactStatus.choices,
+        default=ContactStatus.NEW
+    )
+    admin_notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = _('Contact')
+        verbose_name_plural = _('Contacts')
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.name} - {self.subject}"
     

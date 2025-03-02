@@ -1,0 +1,38 @@
+{% extends "emails/base_email.html" %} {% block title %}Thank You for Contacting
+Us{% endblock %} {% block content %}
+<h2>Thank You for Contacting Grade-A Express</h2>
+
+<p>Dear {{ contact.name }},</p>
+
+<p>
+  Thank you for reaching out to us. We have received your message and our team
+  will review it shortly.
+</p>
+
+<div
+  style="
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 15px 0;
+  "
+>
+  <h3>Your Message Details:</h3>
+  <p><strong>Subject:</strong> {{ contact.subject }}</p>
+  <p><strong>Sent on:</strong> {{ contact.created_at|date:"F j, Y, g:i a" }}</p>
+</div>
+
+<p>
+  We typically respond to inquiries within 24-48 business hours. If your matter
+  is urgent, please call our customer service team at +1-800-GRADE-A.
+</p>
+
+<p>
+  Thank you for choosing Grade-A Express for your shipping and logistics needs.
+</p>
+
+<p>
+  Best regards,<br />
+  The Grade-A Express Team
+</p>
+{% endblock %}

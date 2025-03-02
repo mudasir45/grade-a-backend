@@ -1,13 +1,15 @@
-from django.db import models
 from django.conf import settings
-from django.core.validators import MinValueValidator
-from django.utils.translation import gettext_lazy as _
-from core.utils import SixDigitIDMixin
-from shipping_rates.models import ServiceType, Country
-from django.utils.crypto import get_random_string
-from django.utils import timezone
 from django.core.files.base import ContentFile
+from django.core.validators import MinValueValidator
+from django.db import models
+from django.utils import timezone
+from django.utils.crypto import get_random_string
+from django.utils.translation import gettext_lazy as _
 from model_utils import FieldTracker
+
+from core.utils import SixDigitIDMixin
+from shipping_rates.models import Country, ServiceType
+
 from .utils import generate_shipment_receipt
 
 
@@ -31,6 +33,16 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='shipments'
+    )
+    
+    # Staff Information
+    staff = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='assigned_shipments',
+        null=True,
+        blank=True,
+        help_text=_('Staff member assigned to handle this shipment')
     )
 
     # Receipt PDF

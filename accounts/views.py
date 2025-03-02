@@ -1,17 +1,24 @@
-from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from drf_spectacular.utils import extend_schema, OpenApiParameter, inline_serializer
-from drf_spectacular.types import OpenApiTypes
-from rest_framework import generics, serializers
-from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
-
-from accounts.models import UserCountry
-from .serializers import UserSerializer, UserCreateSerializer, UserCountrySerializer
-from shipping_rates.models import Country
+from django.core.mail import EmailMultiAlternatives
 from django.db.models import Count, Q
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (OpenApiParameter, extend_schema,
+                                   inline_serializer)
+from rest_framework import generics, permissions, serializers, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.response import Response
+
+from accounts.models import Contact, UserCountry
 from buy4me.models import Buy4MeRequest
+from shipping_rates.models import Country
+
+from .serializers import (ContactSerializer, UserCountrySerializer,
+                          UserCreateSerializer, UserSerializer)
+
 User = get_user_model()
 
 class PasswordUpdateSerializer(serializers.Serializer):
@@ -231,3 +238,80 @@ class UserCountryView(generics.ListAPIView):
 
     def get_queryset(self):
         return UserCountry.objects.all()
+
+@extend_schema(tags=['contact'])
+class ContactView(generics.CreateAPIView):
+    """
+    API endpoint for submitting contact form
+    """
+    serializer_class = ContactSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        contact = serializer.save()
+        
+        # Send confirmation email to the user
+        self.send_confirmation_email(contact)
+        
+        # Send notification email to admin
+        self.send_admin_notification(contact)
+        
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            {"message": "Your message has been received. We'll get back to you soon."},
+            status=status.HTTP_201_CREATED,
+            headers=headers
+        )
+    
+    def send_confirmation_email(self, contact):
+        """Send confirmation email to the user who submitted the contact form"""
+        context = {'contact': contact}
+        
+        # Render HTML content
+        html_content = render_to_string('emails/contact_confirmation.html', context)
+        text_content = strip_tags(html_content)
+        
+        # Create email message
+        subject = f'Thank you for contacting Grade-A Express'
+        from_email = settings.DEFAULT_FROM_EMAIL
+        
+        # Send to user
+        email = EmailMultiAlternatives(
+            subject,
+            text_content,
+            from_email,
+            [contact.email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+    
+    def send_admin_notification(self, contact):
+        """Send notification email to admin about new contact form submission"""
+        # Generate admin URL for the contact
+        site_url = getattr(settings, 'SITE_URL', 'http://localhost:8000')
+        admin_url = f"{site_url}/admin/accounts/contact/{contact.id}/change/"
+        
+        context = {
+            'contact': contact,
+            'admin_url': admin_url
+        }
+        
+        # Render HTML content
+        html_content = render_to_string('emails/contact_admin_notification.html', context)
+        text_content = strip_tags(html_content)
+        
+        # Create email message
+        subject = f'New Contact Form Submission: {contact.subject}'
+        from_email = settings.DEFAULT_FROM_EMAIL
+        
+        # Send to admin
+        email = EmailMultiAlternatives(
+            subject,
+            text_content,
+            from_email,
+            [settings.ADMIN_EMAIL]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()

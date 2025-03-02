@@ -1,16 +1,15 @@
-from django.shortcuts import render
-from rest_framework import viewsets, status, permissions
+import string
+
+from django.db.models import Prefetch
+from django.shortcuts import get_object_or_404, render
+from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Prefetch
-from drf_spectacular.utils import extend_schema, OpenApiParameter
-from .models import ShipmentRequest
-from .serializers import (
-    ShipmentRequestSerializer,
-    ShipmentCreateSerializer,
-)
 from rest_framework.views import APIView
-from django.shortcuts import get_object_or_404
+
+from .models import ShipmentRequest
+from .serializers import ShipmentCreateSerializer, ShipmentRequestSerializer
 
 # Create your views here.
 
@@ -243,3 +242,220 @@ class ShipmentRequestViewSet(viewsets.ModelViewSet):
         instance.status = new_status
         instance.save()
         return Response(self.get_serializer(instance).data)
+
+
+class LastShipmentView(APIView):
+    """
+    View for getting the last shipment data for a user
+    """
+    permission_classes = [permissions.AllowAny]  
+    
+    def get(self, request, user_id=None):
+        """Get the last shipment for a specific user using GET"""
+        # If user_id is not in the URL path, try to get it from query parameters
+        if not user_id:
+            user_id = request.query_params.get('user_id')
+            
+        print("user_id", user_id)
+        
+        if not user_id:
+            return Response(
+                {'error': 'user_id is required as a URL parameter or query parameter'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Get the most recent shipment for the user
+            shipment = ShipmentRequest.objects.filter(
+                user__id=user_id
+            ).order_by('-created_at').first()
+            
+            print("shipment", shipment)
+
+            if not shipment:
+                return Response(
+                    {'message': 'No shipments found for this user'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            serializer = ShipmentRequestSerializer(shipment)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def post(self, request, user_id=None):
+        """Get the last shipment for a specific user using POST"""
+        # If user_id is not in the URL path, try to get it from the request body
+        if not user_id:
+            user_id = request.data.get('user_id')
+            
+        print("user_id", user_id)
+        
+        if not user_id:
+            return Response(
+                {'error': 'user_id is required in the URL path or request body'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Get the most recent shipment for the user
+            shipment = ShipmentRequest.objects.filter(
+                user__id=user_id
+            ).select_related(
+                'sender_country',
+                'recipient_country',
+                'service_type'
+            ).order_by('-created_at').first()
+            
+            if not shipment:
+                return Response(
+                    {'message': 'No shipments found for this user'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            serializer = ShipmentRequestSerializer(shipment)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+@extend_schema(tags=['shipments'])
+class StaffShipmentsView(APIView):
+    """
+    View for getting shipments assigned to a specific staff member
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        summary="Get staff shipments",
+        description="Get all shipments assigned to a specific staff member",
+        parameters=[
+            OpenApiParameter(
+                name='staff_id',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description='ID of the staff member to get shipments for'
+            )
+        ]
+    )
+    def get(self, request, staff_id=None):
+        """Get shipments assigned to a specific staff member"""
+        # If staff_id is not in the URL path, try to get it from query parameters
+        if not staff_id:
+            staff_id = request.query_params.get('staff_id')
+        
+        # If still no staff_id and the user is staff, use their ID
+        if not staff_id and hasattr(request.user, 'is_staff') and request.user.is_staff:
+            staff_id = request.user.id
+            
+        if not staff_id:
+            return Response(
+                {'error': 'staff_id is required as a URL parameter or query parameter'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Get all shipments assigned to the staff member
+            shipments = ShipmentRequest.objects.filter(
+                staff_id=staff_id
+            ).select_related(
+                'sender_country',
+                'recipient_country',
+                'service_type',
+                'user',
+                'staff'
+            ).order_by('-created_at')
+            
+            if not shipments.exists():
+                return Response(
+                    {'message': 'No shipments found for this staff member'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            serializer = ShipmentRequestSerializer(shipments, many=True)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+@extend_schema(tags=['shipments'])
+class AssignStaffToShipmentView(APIView):
+    """
+    View for assigning a staff member to a shipment
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        summary="Assign staff to shipment",
+        description="Assign a staff member to handle a specific shipment",
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'shipment_id': {
+                        'type': 'string',
+                        'description': 'ID of the shipment to assign'
+                    },
+                    'staff_id': {
+                        'type': 'string',
+                        'description': 'ID of the staff member to assign'
+                    }
+                },
+                'required': ['shipment_id', 'staff_id']
+            }
+        }
+    )
+    def post(self, request):
+        """Assign a staff member to a shipment"""
+        shipment_id = request.data.get('shipment_id')
+        staff_id = request.data.get('staff_id')
+        
+        if not shipment_id or not staff_id:
+            return Response(
+                {'error': 'Both shipment_id and staff_id are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Check if the shipment exists
+            shipment = get_object_or_404(ShipmentRequest, id=shipment_id)
+            
+            # Check if the staff user exists and is actually staff
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            
+            try:
+                staff_user = User.objects.get(id=staff_id)
+                if not hasattr(staff_user, 'is_staff') or not staff_user.is_staff:
+                    return Response(
+                        {'error': 'The specified user is not a staff member'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'Staff user not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Assign the staff member to the shipment
+            shipment.staff = staff_user
+            shipment.save()
+            
+            serializer = ShipmentRequestSerializer(shipment)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
