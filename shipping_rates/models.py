@@ -1,8 +1,8 @@
-from django.db import models
 from django.core.validators import MinValueValidator
+from django.db import models
 from django.utils.translation import gettext_lazy as _
-from core.utils import SixDigitIDMixin
 
+from core.utils import SixDigitIDMixin
 
 
 class Country(SixDigitIDMixin, models.Model):
@@ -140,7 +140,11 @@ class AdditionalCharge(SixDigitIDMixin, models.Model):
         decimal_places=2,
         validators=[MinValueValidator(0)]
     )
-    zones = models.ManyToManyField(ShippingZone, blank=True)
+    zones = models.ManyToManyField(
+        ShippingZone,
+        related_name='additional_charges',
+        blank=True
+    )
     service_types = models.ManyToManyField(ServiceType, blank=True)
     is_active = models.BooleanField(default=True)
     description = models.TextField(blank=True)

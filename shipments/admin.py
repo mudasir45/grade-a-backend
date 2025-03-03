@@ -30,18 +30,24 @@ class StaffAssignmentFilter(admin.SimpleListFilter):
 @admin.register(ShipmentRequest)
 class ShipmentRequestAdmin(admin.ModelAdmin):
     list_display = [
-        'tracking_number', 'status_badge', 'user_link', 'staff_link',
-        'sender_name', 'recipient_name', 'service_type',
-        'total_cost_display', 'receipt_download', 'created_at'
+        'tracking_number', 'status_badge', 'payment_status_badge',
+        'user_link', 'staff_link', 'sender_name', 'recipient_name',
+        'service_type', 'total_cost_display', 'receipt_download', 'created_at'
     ]
-    list_filter = ['status', 'service_type', 'created_at', 'staff', StaffAssignmentFilter]
+    list_filter = [
+        'status', 'payment_method', 'payment_status',
+        'service_type', 'created_at', 'staff',
+        StaffAssignmentFilter
+    ]
     search_fields = [
         'tracking_number', 'sender_name', 'recipient_name', 
-        'current_location', 'user__email', 'staff__email'
+        'current_location', 'user__email', 'staff__email',
+        'transaction_id'
     ]
     readonly_fields = [
         'tracking_number', 'tracking_history',
-        'created_at', 'updated_at', 'receipt_download'
+        'created_at', 'updated_at', 'receipt_download',
+        'cod_amount', 'total_cost'
     ]
     
     actions = [
@@ -52,7 +58,9 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         'mark_as_delivered',
         'mark_as_cancelled',
         'assign_to_me',
-        'unassign_staff'
+        'unassign_staff',
+        'mark_payment_as_paid',
+        'mark_payment_as_failed'
     ]
     
     fieldsets = (
@@ -63,6 +71,12 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             'fields': (
                 'tracking_number', 'status', 'current_location',
                 'estimated_delivery', 'tracking_history', 'receipt_download'
+            )
+        }),
+        ('Payment Information', {
+            'fields': (
+                'payment_method', 'payment_status', 'payment_date',
+                'transaction_id', 'cod_amount'
             )
         }),
         ('Sender Information', {
@@ -92,11 +106,12 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         ('Cost Information', {
             'fields': (
                 'base_rate', 'per_kg_rate', 'weight_charge',
-                'total_additional_charges', 'total_cost'
+                'service_charge', 'total_additional_charges',
+                'total_cost'
             )
         }),
         ('Additional Information', {
-            'fields': ('notes', 'created_at', 'updated_at'),
+            'fields': ('notes',),
             'classes': ('collapse',)
         }),
     )
@@ -163,6 +178,22 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         )
     status_badge.short_description = 'Status'
     
+    def payment_status_badge(self, obj):
+        status_colors = {
+            'PENDING': 'bg-warning',
+            'PAID': 'bg-success',
+            'FAILED': 'bg-danger',
+            'REFUNDED': 'bg-info'
+        }
+        color = status_colors.get(obj.payment_status, 'bg-secondary')
+        return format_html(
+            '<span class="badge {}">{} {}</span>',
+            color,
+            obj.get_payment_method_display(),
+            obj.get_payment_status_display()
+        )
+    payment_status_badge.short_description = 'Payment'
+    
     def total_cost_display(self, obj):
         return f"${obj.total_cost}"
     total_cost_display.short_description = 'Total Cost'
@@ -221,6 +252,30 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
     def mark_as_cancelled(self, request, queryset):
         self._update_status(request, queryset, 'CANCELLED', 'Cancelled')
     mark_as_cancelled.short_description = "Mark as Cancelled"
+    
+    def mark_payment_as_paid(self, request, queryset):
+        updated = queryset.update(
+            payment_status=ShipmentRequest.PaymentStatus.PAID,
+            payment_date=timezone.now()
+        )
+        self.message_user(
+            request,
+            f"Successfully marked {updated} shipments as paid",
+            messages.SUCCESS
+        )
+    mark_payment_as_paid.short_description = "Mark payment as Paid"
+    
+    def mark_payment_as_failed(self, request, queryset):
+        updated = queryset.update(
+            payment_status=ShipmentRequest.PaymentStatus.FAILED,
+            payment_date=timezone.now()
+        )
+        self.message_user(
+            request,
+            f"Successfully marked {updated} shipments as failed",
+            messages.SUCCESS
+        )
+    mark_payment_as_failed.short_description = "Mark payment as Failed"
     
     def _update_status(self, request, queryset, status, location):
         for shipment in queryset:

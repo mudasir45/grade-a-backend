@@ -1,12 +1,18 @@
-from rest_framework import serializers
-from .models import ShipmentRequest
-from shipping_rates.models import ShippingZone, WeightBasedRate, DimensionalFactor, Country, ServiceType
 from decimal import Decimal
+
+from rest_framework import serializers
+
+from shipping_rates.models import (Country, DimensionalFactor, ServiceType,
+                                   ShippingZone, WeightBasedRate)
+
+from .models import ShipmentRequest
 
 
 class ShipmentRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField(read_only=True)
-    # dimensions = serializers.JSONField(required=True)
+    cod_amount = serializers.DecimalField(read_only=True, max_digits=10, decimal_places=2)
+    payment_method = serializers.ChoiceField(choices=ShipmentRequest.PaymentMethod.choices)
+    payment_status = serializers.ChoiceField(read_only=True, choices=ShipmentRequest.PaymentStatus.choices)
 
     class Meta:
         model = ShipmentRequest
@@ -16,7 +22,9 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
             'current_location', 'estimated_delivery',
             'tracking_history', 'base_rate', 'per_kg_rate',
             'weight_charge', 'total_additional_charges',
-            'total_cost', 'created_at', 'updated_at'
+            'total_cost', 'created_at', 'updated_at',
+            'cod_amount', 'payment_status', 'payment_date',
+            'transaction_id'
         ]
 
     # def validate_dimensions(self, value):
@@ -28,23 +36,30 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
     #     return value
 
 class ShipmentCreateSerializer(serializers.ModelSerializer):
+    payment_method = serializers.ChoiceField(
+        choices=ShipmentRequest.PaymentMethod.choices,
+        default=ShipmentRequest.PaymentMethod.ONLINE
+    )
+
     class Meta:
         model = ShipmentRequest
         fields = [
-            'sender_name', 'tracking_number', 'sender_email', 'sender_phone',
+            'sender_name', 'sender_email', 'sender_phone',
             'sender_address', 'sender_country',
             'recipient_name', 'recipient_email', 'recipient_phone',
             'recipient_address', 'recipient_country',
             'package_type', 'weight', 'length', 'width', 'height',
             'description', 'declared_value',
             'service_type', 'insurance_required', 'signature_required',
-            'notes'
+            'payment_method', 'notes'
         ]
         read_only_fields = [
             'tracking_number', 'status', 'current_location',
             'estimated_delivery', 'tracking_history',
             'base_rate', 'per_kg_rate', 'weight_charge',
-            'total_additional_charges', 'total_cost'
+            'total_additional_charges', 'total_cost',
+            'cod_amount', 'payment_status', 'payment_date',
+            'transaction_id'
         ]
 
     def calculate_shipping_rates(self, data):
@@ -100,23 +115,32 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
             
             # 6. Calculate additional charges
             total_additional = Decimal('0')
-            for charge in zone.additionalcharge_set.filter(
+            additional_charges = zone.additional_charges.filter(
                 service_types=data['service_type'],
                 is_active=True
-            ):
+            )
+            for charge in additional_charges:
                 amount = (
                     charge.value if charge.charge_type == 'FIXED'
                     else (base_cost * charge.value / 100)
                 )
                 total_additional += amount
             
-            # 7. Calculate total cost including service charge
-            total_cost = (
+            # 7. Calculate subtotal
+            subtotal = (
                 base_cost + 
                 weight_charge + 
                 service_charge + 
                 total_additional
             )
+            
+            # 8. Add COD charge if applicable
+            cod_amount = Decimal('0')
+            if data.get('payment_method') == ShipmentRequest.PaymentMethod.COD:
+                cod_amount = round(subtotal * Decimal('0.05'), 2)
+            
+            # 9. Calculate final total
+            total_cost = subtotal + cod_amount
             
             return {
                 'base_rate': base_cost,
@@ -124,6 +148,7 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
                 'weight_charge': weight_charge,
                 'service_charge': service_charge,
                 'total_additional_charges': total_additional,
+                'cod_amount': cod_amount,
                 'total_cost': total_cost
             }
             

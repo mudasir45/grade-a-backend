@@ -2,6 +2,7 @@ import string
 
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
@@ -333,6 +334,15 @@ class StaffShipmentsView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
     
+    def check_staff_permission(self, request):
+        """Check if user is staff and handle error response"""
+        if not request.user.is_staff:
+            return Response(
+                {'error': 'Only staff members can access this endpoint'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return None
+    
     @extend_schema(
         summary="Get staff shipments",
         description="Get all shipments assigned to a specific staff member",
@@ -342,46 +352,247 @@ class StaffShipmentsView(APIView):
                 type=str,
                 location=OpenApiParameter.QUERY,
                 description='ID of the staff member to get shipments for'
+            ),
+            OpenApiParameter(
+                name='status',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description='Filter by shipment status'
+            ),
+            OpenApiParameter(
+                name='payment_status',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description='Filter by payment status'
             )
         ]
     )
     def get(self, request, staff_id=None):
         """Get shipments assigned to a specific staff member"""
+        # Check staff permission
+        error_response = self.check_staff_permission(request)
+        if error_response:
+            return error_response
+            
         # If staff_id is not in the URL path, try to get it from query parameters
         if not staff_id:
             staff_id = request.query_params.get('staff_id')
         
-        # If still no staff_id and the user is staff, use their ID
-        if not staff_id and hasattr(request.user, 'is_staff') and request.user.is_staff:
+        # If still no staff_id, use the current user's ID
+        if not staff_id:
             staff_id = request.user.id
             
-        if not staff_id:
-            return Response(
-                {'error': 'staff_id is required as a URL parameter or query parameter'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
         try:
-            # Get all shipments assigned to the staff member
-            shipments = ShipmentRequest.objects.filter(
-                staff_id=staff_id
-            ).select_related(
+            # Build the base queryset
+            queryset = ShipmentRequest.objects.select_related(
                 'sender_country',
                 'recipient_country',
                 'service_type',
                 'user',
                 'staff'
-            ).order_by('-created_at')
+            )
             
-            if not shipments.exists():
+            # Apply filters
+            status_filter = request.query_params.get('status')
+            if status_filter:
+                queryset = queryset.filter(status=status_filter)
+                
+            payment_status = request.query_params.get('payment_status')
+            if payment_status:
+                queryset = queryset.filter(payment_status=payment_status)
+            
+            # Filter by staff_id
+            queryset = queryset.filter(staff_id=staff_id).order_by('-created_at')
+            
+            if not queryset.exists():
                 return Response(
                     {'message': 'No shipments found for this staff member'},
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            serializer = ShipmentRequestSerializer(shipments, many=True)
+            serializer = ShipmentRequestSerializer(queryset, many=True)
             return Response(serializer.data)
             
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+@extend_schema(tags=['shipments'])
+class StaffShipmentManagementView(APIView):
+    """
+    View for staff to manage individual shipments (update/delete)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def check_staff_permission(self, request):
+        """Check if user is staff and handle error response"""
+        if not request.user.is_staff:
+            return Response(
+                {'error': 'Only staff members can access this endpoint'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return None
+    
+    def get_shipment(self, pk, staff_user):
+        """Get shipment and verify staff access"""
+        shipment = get_object_or_404(
+            ShipmentRequest.objects.select_related(
+                'sender_country',
+                'recipient_country',
+                'service_type',
+                'user',
+                'staff'
+            ),
+            pk=pk
+        )
+        
+        # Verify the shipment is assigned to this staff member
+        if shipment.staff_id != staff_user.id:
+            raise PermissionError(
+                "You don't have permission to manage this shipment"
+            )
+            
+        return shipment
+    
+    @extend_schema(
+        summary="Update shipment",
+        description="Update shipment details (staff only)"
+    )
+    def put(self, request, pk):
+        """Full update of a shipment"""
+        # Check staff permission
+        error_response = self.check_staff_permission(request)
+        if error_response:
+            return error_response
+            
+        try:
+            shipment = self.get_shipment(pk, request.user)
+            serializer = ShipmentRequestSerializer(
+                shipment,
+                data=request.data
+            )
+            
+            if serializer.is_valid():
+                # Add tracking history entry for the update
+                old_status = shipment.status
+                updated_shipment = serializer.save()
+                
+                if old_status != updated_shipment.status:
+                    updated_shipment.tracking_history.append({
+                        'status': updated_shipment.status,
+                        'location': updated_shipment.current_location,
+                        'timestamp': timezone.now().isoformat(),
+                        'description': f'Status updated by staff: {request.user.email}',
+                        'staff_id': request.user.id
+                    })
+                    updated_shipment.save()
+                
+                return Response(serializer.data)
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        except PermissionError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @extend_schema(
+        summary="Partial update shipment",
+        description="Partially update shipment details (staff only)"
+    )
+    def patch(self, request, pk):
+        """Partial update of a shipment"""
+        # Check staff permission
+        error_response = self.check_staff_permission(request)
+        if error_response:
+            return error_response
+            
+        try:
+            shipment = self.get_shipment(pk, request.user)
+            serializer = ShipmentRequestSerializer(
+                shipment,
+                data=request.data,
+                partial=True
+            )
+            
+            if serializer.is_valid():
+                # Add tracking history entry if status is being updated
+                old_status = shipment.status
+                updated_shipment = serializer.save()
+                
+                if 'status' in request.data and old_status != updated_shipment.status:
+                    updated_shipment.tracking_history.append({
+                        'status': updated_shipment.status,
+                        'location': updated_shipment.current_location,
+                        'timestamp': timezone.now().isoformat(),
+                        'description': f'Status updated by staff: {request.user.email}',
+                        'staff_id': request.user.id
+                    })
+                    updated_shipment.save()
+                
+                return Response(serializer.data)
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        except PermissionError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @extend_schema(
+        summary="Delete shipment",
+        description="Delete a shipment (staff only, restricted to certain statuses)"
+    )
+    def delete(self, request, pk):
+        """Delete a shipment"""
+        # Check staff permission
+        error_response = self.check_staff_permission(request)
+        if error_response:
+            return error_response
+            
+        try:
+            shipment = self.get_shipment(pk, request.user)
+            
+            # Only allow deletion of shipments in certain statuses
+            allowed_statuses = [
+                ShipmentRequest.Status.PENDING,
+                ShipmentRequest.Status.CANCELLED
+            ]
+            
+            if shipment.status not in allowed_statuses:
+                return Response(
+                    {
+                        'error': 'Can only delete shipments in PENDING or CANCELLED status'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            shipment.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+            
+        except PermissionError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_403_FORBIDDEN
+            )
         except Exception as e:
             return Response(
                 {'error': str(e)},

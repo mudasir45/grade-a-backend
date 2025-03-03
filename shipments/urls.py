@@ -18,5 +18,6 @@ urlpatterns = [
     # Staff shipments endpoints
     path('staff-shipments/', views.StaffShipmentsView.as_view(), name='staff-shipments'),
     path('staff-shipments/<str:staff_id>/', views.StaffShipmentsView.as_view(), name='staff-shipments-with-id'),
+    path('staff-shipment/<str:pk>/', views.StaffShipmentManagementView.as_view(), name='staff-shipment-management'),
     path('assign-staff/', views.AssignStaffToShipmentView.as_view(), name='assign-staff'),
 ] 

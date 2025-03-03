@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.validators import MinValueValidator
@@ -24,6 +26,16 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         IN_TRANSIT = 'IN_TRANSIT', _('In Transit')
         DELIVERED = 'DELIVERED', _('Delivered')
         CANCELLED = 'CANCELLED', _('Cancelled')
+    
+    class PaymentMethod(models.TextChoices):
+        ONLINE = 'ONLINE', _('Online Payment')
+        COD = 'COD', _('Cash on Delivery')
+    
+    class PaymentStatus(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        PAID = 'PAID', _('Paid')
+        FAILED = 'FAILED', _('Failed')
+        REFUNDED = 'REFUNDED', _('Refunded')
 
     # Field tracker
     tracker = FieldTracker()
@@ -43,6 +55,37 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         null=True,
         blank=True,
         help_text=_('Staff member assigned to handle this shipment')
+    )
+
+    # Payment Information
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PaymentMethod.choices,
+        default=PaymentMethod.ONLINE,
+        help_text=_('Method of payment for the shipment')
+    )
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.PENDING,
+        help_text=_('Current status of the payment')
+    )
+    cod_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=Decimal('0'),
+        help_text=_('Additional amount for Cash on Delivery (5% of total cost)')
+    )
+    payment_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_('Date and time when payment was completed')
+    )
+    transaction_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text=_('Payment transaction ID from payment processor')
     )
 
     # Receipt PDF
@@ -197,6 +240,23 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
     def __str__(self):
         return f"Shipment #{self.tracking_number or self.id} - {self.status}"
 
+    def calculate_total_cost(self):
+        """Calculate total cost including COD charge if applicable"""
+        subtotal = (
+            self.base_rate + 
+            self.weight_charge + 
+            self.service_charge +
+            self.total_additional_charges
+        )
+        
+        # Add 5% COD charge if payment method is COD
+        if self.payment_method == self.PaymentMethod.COD:
+            self.cod_amount = round(subtotal * Decimal('0.05'), 2)
+            return subtotal + self.cod_amount
+        
+        self.cod_amount = Decimal('0')
+        return subtotal
+
     def save(self, *args, **kwargs):
         is_new = not self.pk
         
@@ -214,14 +274,9 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
                 'description': 'Shipment request created'
             })
         
-        # Calculate total cost
+        # Calculate total cost including COD charge if applicable
         self.weight_charge = self.weight * self.per_kg_rate
-        self.total_cost = (
-            self.base_rate + 
-            self.weight_charge + 
-            self.service_charge +
-            self.total_additional_charges
-        )
+        self.total_cost = self.calculate_total_cost()
         
         # Save the model first
         super().save(*args, **kwargs)
@@ -246,7 +301,7 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
             'status': status,
             'location': location,
             'timestamp': timezone.now().isoformat(),
-            'description': description or self.get_status_display()
+            'description': description or dict(self.Status.choices)[status]
         })
         self.save()
 
