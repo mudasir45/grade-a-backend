@@ -940,10 +940,10 @@ class SupportTicketViewSet(viewsets.ModelViewSet):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    @extend_schema(
-        summary="Get ticket statistics",
-        responses={200: OpenApiTypes.OBJECT}
-    )
+    # @extend_schema(
+    #     summary="Get ticket statistics",
+    #     responses={200: OpenApiTypes.OBJECT}
+    # )
     @action(
         detail=False,
         methods=['get'],

@@ -125,13 +125,15 @@ class DimensionalFactor(SixDigitIDMixin, models.Model):
         return f"{self.service_type} - Factor: {self.factor}"
 
 class AdditionalCharge(SixDigitIDMixin, models.Model):
+    """Model for additional charges that can be applied to shipments"""
     class ChargeType(models.TextChoices):
         FIXED = 'FIXED', _('Fixed Amount')
-        PERCENTAGE = 'PERCENTAGE', _('Percentage of Base Rate')
+        PERCENTAGE = 'PERCENTAGE', _('Percentage of Base Cost')
 
-    name = models.CharField(max_length=100)  # e.g., Fuel Surcharge, Remote Area Fee
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
     charge_type = models.CharField(
-        max_length=10,
+        max_length=20,
         choices=ChargeType.choices,
         default=ChargeType.FIXED
     )
@@ -141,13 +143,21 @@ class AdditionalCharge(SixDigitIDMixin, models.Model):
         validators=[MinValueValidator(0)]
     )
     zones = models.ManyToManyField(
-        ShippingZone,
-        related_name='additional_charges',
-        blank=True
+        'ShippingZone',
+        related_name='additional_charges'
     )
-    service_types = models.ManyToManyField(ServiceType, blank=True)
+    service_types = models.ManyToManyField(
+        'ServiceType',
+        related_name='additional_charges'
+    )
     is_active = models.BooleanField(default=True)
-    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Additional Charge')
+        verbose_name_plural = _('Additional Charges')
+        ordering = ['name']
 
     def __str__(self):
-        return f"{self.name} - {self.get_charge_type_display()}" 
+        return self.name 

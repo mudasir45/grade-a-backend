@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
+from accounts.serializers import UserSerializer
 from shipping_rates.models import (Country, DimensionalFactor, ServiceType,
                                    ShippingZone, WeightBasedRate)
 
@@ -229,60 +230,46 @@ class SupportTicketSerializer(serializers.ModelSerializer):
     class Meta:
         model = SupportTicket
         fields = [
-            'id', 'ticket_number', 'subject', 'message', 'category',
-            'category_display', 'status', 'status_display', 'priority',
-            'user', 'assigned_to', 'shipment', 'created_at', 'updated_at',
-            'resolved_at', 'response_time', 'resolution_time',
-            'communication_history'
+            'ticket_number', 'subject', 'message', 'category',
+            'category_display', 'status', 'status_display',
+            'user', 'assigned_to', 'shipment', 'created_at',
+            'updated_at', 'resolved_at', 'comments'
         ]
         read_only_fields = [
-            'ticket_number', 'created_at', 'updated_at', 'resolved_at',
-            'response_time', 'resolution_time', 'communication_history'
+            'ticket_number', 'created_at', 'updated_at',
+            'resolved_at', 'comments'
         ]
 
 
 class SupportTicketCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating support tickets"""
-    shipment_id = serializers.CharField(required=False, write_only=True)
+    shipment = serializers.PrimaryKeyRelatedField(
+        queryset=ShipmentRequest.objects.all(),
+        required=False,
+        write_only=True
+    )
     
     class Meta:
         model = SupportTicket
         fields = [
-            'subject', 'message', 'category', 'priority', 'shipment_id'
+            'subject', 'message', 'category', 'shipment'
         ]
     
-    def validate_shipment_id(self, value):
-        """Validate the shipment exists and belongs to the user"""
-        if value:
-            try:
-                shipment = ShipmentRequest.objects.get(
-                    id=value,
-                    user=self.context['request'].user
-                )
-                return shipment.id
-            except ShipmentRequest.DoesNotExist:
-                raise serializers.ValidationError(
-                    "Invalid shipment ID or shipment does not belong to you"
-                )
-        return None
+    def validate_shipment(self, value):
+        """Validate the shipment belongs to the user"""
+        if value and value.user != self.context['request'].user:
+            raise serializers.ValidationError(
+                "This shipment does not belong to you"
+            )
+        return value
     
     def create(self, validated_data):
         """Create a new support ticket"""
-        shipment_id = validated_data.pop('shipment_id', None)
         user = self.context['request'].user
-        
-        # Create the ticket
-        ticket = SupportTicket.objects.create(
+        return SupportTicket.objects.create(
             user=user,
             **validated_data
         )
-        
-        # Associate shipment if provided
-        if shipment_id:
-            ticket.shipment_id = shipment_id
-            ticket.save()
-        
-        return ticket
 
 
 class SupportTicketUpdateSerializer(serializers.ModelSerializer):
@@ -291,7 +278,7 @@ class SupportTicketUpdateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = SupportTicket
-        fields = ['status', 'priority', 'assigned_to', 'comment']
+        fields = ['status', 'assigned_to', 'comment']
     
     def validate_assigned_to(self, value):
         """Ensure assigned user is staff"""
@@ -312,10 +299,6 @@ class SupportTicketUpdateSerializer(serializers.ModelSerializer):
         # Add comment if provided
         if comment:
             ticket.add_comment(user, comment)
-        
-        # Send notification if status changed
-        if 'status' in validated_data:
-            ticket.send_status_update_notification()
         
         return ticket
 
