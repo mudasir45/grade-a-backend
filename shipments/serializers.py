@@ -5,14 +5,14 @@ from rest_framework import serializers
 from shipping_rates.models import (Country, DimensionalFactor, ServiceType,
                                    ShippingZone, WeightBasedRate)
 
-from .models import ShipmentRequest
+from .models import ShipmentRequest, ShipmentStatusLocation
 
 
 class ShipmentRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField(read_only=True)
     cod_amount = serializers.DecimalField(read_only=True, max_digits=10, decimal_places=2)
     payment_method = serializers.ChoiceField(choices=ShipmentRequest.PaymentMethod.choices)
-    payment_status = serializers.ChoiceField(read_only=True, choices=ShipmentRequest.PaymentStatus.choices)
+    payment_status = serializers.ChoiceField(choices=ShipmentRequest.PaymentStatus.choices)
 
     class Meta:
         model = ShipmentRequest
@@ -27,13 +27,7 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
             'transaction_id'
         ]
 
-    # def validate_dimensions(self, value):
-    #     required_keys = ['length', 'width', 'height']
-    #     if not all(key in value for key in required_keys):
-    #         raise serializers.ValidationError(
-    #             "Dimensions must include length, width, and height"
-    #         )
-    #     return value
+
 
 class ShipmentCreateSerializer(serializers.ModelSerializer):
     payment_method = serializers.ChoiceField(
@@ -162,4 +156,63 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
         # Update validated data with calculated rates
         validated_data.update(rates)
         
-        return super().create(validated_data) 
+        return super().create(validated_data)
+
+
+class ShipmentStatusLocationSerializer(serializers.ModelSerializer):
+    """Serializer for ShipmentStatusLocation model"""
+    status_type_display = serializers.CharField(source='get_status_type_display', read_only=True)
+    
+    class Meta:
+        model = ShipmentStatusLocation
+        fields = [
+            'id', 'status_type', 'status_type_display', 
+            'location_name', 'description', 'display_order'
+        ]
+        read_only_fields = ['id', 'status_type_display']
+
+
+class StatusUpdateSerializer(serializers.Serializer):
+    """Serializer for updating shipment status"""
+    status_location_id = serializers.IntegerField(
+        required=True,
+        help_text="ID of the status location to use for the update"
+    )
+    custom_description = serializers.CharField(
+        required=False, 
+        allow_blank=True,
+        help_text="Optional custom description to override the default"
+    )
+    
+    def validate_status_location_id(self, value):
+        """Validate that the status location exists and is active"""
+        try:
+            status_location = ShipmentStatusLocation.objects.get(id=value, is_active=True)
+            # Store the status location for later use
+            self.context['status_location'] = status_location
+            return value
+        except ShipmentStatusLocation.DoesNotExist:
+            raise serializers.ValidationError(
+                "Status location not found or is inactive"
+            )
+    
+    def update(self, instance, validated_data):
+        """Update the shipment status"""
+        status_location = self.context['status_location']
+        custom_description = validated_data.get('custom_description')
+        
+        # Get the corresponding ShipmentRequest.Status
+        status_mapping = ShipmentStatusLocation.get_status_mapping()
+        shipment_status = status_mapping.get(status_location.status_type)
+        
+        # Use custom description if provided, otherwise use the default
+        description = custom_description if custom_description else status_location.description
+        
+        # Update the tracking information
+        instance.update_tracking(
+            shipment_status,
+            status_location.location_name,
+            description
+        )
+        
+        return instance 

@@ -5,7 +5,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import ShipmentRequest
+from .models import ShipmentRequest, ShipmentStatusLocation
 
 
 class StaffAssignmentFilter(admin.SimpleListFilter):
@@ -25,6 +25,19 @@ class StaffAssignmentFilter(admin.SimpleListFilter):
         if self.value() == 'no':
             return queryset.filter(staff=None)
         return queryset
+
+
+@admin.register(ShipmentStatusLocation)
+class ShipmentStatusLocationAdmin(admin.ModelAdmin):
+    """Admin interface for managing shipment status locations"""
+    list_display = [
+        'status_type', 'location_name', 'description', 
+        'is_active', 'display_order'
+    ]
+    list_filter = ['status_type', 'is_active']
+    search_fields = ['location_name', 'description']
+    ordering = ['display_order', 'status_type']
+    list_editable = ['is_active', 'display_order']
 
 
 @admin.register(ShipmentRequest)
@@ -50,13 +63,8 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         'cod_amount', 'total_cost'
     ]
     
+    # Base actions that are always available
     actions = [
-        'mark_as_processing',
-        'mark_as_picked_up',
-        'mark_as_in_transit',
-        'mark_as_out_for_delivery',
-        'mark_as_delivered',
-        'mark_as_cancelled',
         'assign_to_me',
         'unassign_staff',
         'mark_payment_as_paid',
@@ -115,6 +123,58 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+    
+    def get_actions(self, request):
+        """
+        Dynamically add status update actions based on ShipmentStatusLocation entries
+        """
+        actions = super().get_actions(request)
+        
+        # Get all active status locations
+        status_locations = ShipmentStatusLocation.objects.filter(is_active=True)
+        
+        # Group by status type
+        status_groups = {}
+        for location in status_locations:
+            if location.status_type not in status_groups:
+                status_groups[location.status_type] = []
+            status_groups[location.status_type].append(location)
+        
+        # Add dynamic actions for each status location
+        for status_type, locations in status_groups.items():
+            for location in locations:
+                action_name = f"mark_as_{status_type.lower()}_{location.id}"
+                action_display_name = f"Mark as {location.get_status_type_display()} - {location.location_name}"
+                
+                # Create a closure to capture the current location
+                def make_action(loc):
+                    def action(modeladmin, request, queryset):
+                        # Get the corresponding ShipmentRequest.Status
+                        status_mapping = ShipmentStatusLocation.get_status_mapping()
+                        shipment_status = status_mapping.get(loc.status_type)
+                        
+                        for shipment in queryset:
+                            shipment.update_tracking(
+                                shipment_status,
+                                loc.location_name,
+                                loc.description
+                            )
+                        
+                        count = queryset.count()
+                        modeladmin.message_user(
+                            request,
+                            f"Successfully updated {count} shipments to {loc.get_status_type_display()} at {loc.location_name}",
+                            messages.SUCCESS
+                        )
+                    
+                    # Set a unique name for the function
+                    action.__name__ = action_name
+                    action.short_description = action_display_name
+                    return action
+                
+                actions[action_name] = (make_action(location), action_name, action_display_name)
+        
+        return actions
     
     def user_link(self, obj):
         if obj.user:
@@ -207,52 +267,6 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         return "-"
     receipt_download.short_description = 'Receipt'
     
-    def mark_as_processing(self, request, queryset):
-        self._update_status(request, queryset, 'PROCESSING', 'Processing')
-    mark_as_processing.short_description = "Mark as Processing"
-    
-    def mark_as_picked_up(self, request, queryset):
-        for shipment in queryset:
-            shipment.update_tracking(
-                'PROCESSING',
-                'Pickup Location',
-                'Package picked up from sender'
-            )
-        count = queryset.count()
-        self.message_user(
-            request,
-            f"Successfully updated {count} shipments",
-            messages.SUCCESS
-        )
-    mark_as_picked_up.short_description = "Mark as Picked Up"
-    
-    def mark_as_in_transit(self, request, queryset):
-        self._update_status(request, queryset, 'IN_TRANSIT', 'In Transit')
-    mark_as_in_transit.short_description = "Mark as In Transit"
-    
-    def mark_as_out_for_delivery(self, request, queryset):
-        for shipment in queryset:
-            shipment.update_tracking(
-                'IN_TRANSIT',
-                'Destination City',
-                'Out for delivery'
-            )
-        count = queryset.count()
-        self.message_user(
-            request,
-            f"Successfully updated {count} shipments",
-            messages.SUCCESS
-        )
-    mark_as_out_for_delivery.short_description = "Mark as Out for Delivery"
-    
-    def mark_as_delivered(self, request, queryset):
-        self._update_status(request, queryset, 'DELIVERED', 'Delivered')
-    mark_as_delivered.short_description = "Mark as Delivered"
-    
-    def mark_as_cancelled(self, request, queryset):
-        self._update_status(request, queryset, 'CANCELLED', 'Cancelled')
-    mark_as_cancelled.short_description = "Mark as Cancelled"
-    
     def mark_payment_as_paid(self, request, queryset):
         updated = queryset.update(
             payment_status=ShipmentRequest.PaymentStatus.PAID,
@@ -276,16 +290,6 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             messages.SUCCESS
         )
     mark_payment_as_failed.short_description = "Mark payment as Failed"
-    
-    def _update_status(self, request, queryset, status, location):
-        for shipment in queryset:
-            shipment.update_tracking(status, location)
-        count = queryset.count()
-        self.message_user(
-            request,
-            f"Successfully updated {count} shipments",
-            messages.SUCCESS
-        )
     
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         """Override to filter the staff dropdown to only show staff users"""

@@ -19,6 +19,69 @@ def shipment_receipt_path(instance, filename):
     """Generate path for shipment receipts."""
     return f'shipment_receipts/{instance.tracking_number}/{filename}'
 
+
+class ShipmentStatusLocation(models.Model):
+    """
+    Model to define locations and descriptions for each shipment status transition.
+    This allows admins to customize the locations and descriptions used in tracking updates.
+    """
+    class StatusType(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        PROCESSING = 'PROCESSING', _('Processing')
+        PICKED_UP = 'PICKED_UP', _('Picked Up')
+        IN_TRANSIT = 'IN_TRANSIT', _('In Transit')
+        OUT_FOR_DELIVERY = 'OUT_FOR_DELIVERY', _('Out for Delivery')
+        DELIVERED = 'DELIVERED', _('Delivered')
+        CANCELLED = 'CANCELLED', _('Cancelled')
+    
+    status_type = models.CharField(
+        max_length=20,
+        choices=StatusType.choices,
+        help_text=_('Type of status transition')
+    )
+    location_name = models.CharField(
+        max_length=255,
+        help_text=_('Location name to use for this status')
+    )
+    description = models.TextField(
+        help_text=_('Description to use for this status update')
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text=_('Whether this status location is active')
+    )
+    display_order = models.PositiveIntegerField(
+        default=0,
+        help_text=_('Order to display in admin actions')
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['display_order', 'status_type']
+        verbose_name = _('Shipment Status Location')
+        verbose_name_plural = _('Shipment Status Locations')
+        unique_together = ['status_type', 'location_name']
+    
+    def __str__(self):
+        return f"{self.get_status_type_display()} - {self.location_name}"
+    
+    @classmethod
+    def get_status_mapping(cls):
+        """
+        Returns a mapping of status types to ShipmentRequest.Status values
+        """
+        return {
+            cls.StatusType.PENDING: ShipmentRequest.Status.PENDING,
+            cls.StatusType.PROCESSING: ShipmentRequest.Status.PROCESSING,
+            cls.StatusType.PICKED_UP: ShipmentRequest.Status.PROCESSING,
+            cls.StatusType.IN_TRANSIT: ShipmentRequest.Status.IN_TRANSIT,
+            cls.StatusType.OUT_FOR_DELIVERY: ShipmentRequest.Status.IN_TRANSIT,
+            cls.StatusType.DELIVERED: ShipmentRequest.Status.DELIVERED,
+            cls.StatusType.CANCELLED: ShipmentRequest.Status.CANCELLED,
+        }
+
+
 class ShipmentRequest(SixDigitIDMixin, models.Model):
     class Status(models.TextChoices):
         PENDING = 'PENDING', _('Pending')

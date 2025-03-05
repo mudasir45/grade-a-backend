@@ -1,8 +1,13 @@
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 
 from . import views
 
 app_name = 'shipments'
+
+# Create a router for ViewSets
+router = DefaultRouter()
+router.register(r'status-locations', views.ShipmentStatusLocationViewSet, basename='status-locations')
 
 urlpatterns = [
     path('', views.ShipmentListCreateView.as_view(), name='shipment-list-create'),
@@ -21,4 +26,10 @@ urlpatterns = [
     path('staff-shipment/<str:pk>/', views.StaffShipmentManagementView.as_view(), name='staff-shipment-management'),
     path('assign-staff/', views.AssignStaffToShipmentView.as_view(), name='assign-staff'),
     path('create-shipment/<str:user_id>/', views.StaffShipmentCreateView.as_view(), name='create-shipment'),
+    
+    # Status update endpoints
+    path('status-update/<str:shipment_id>/', views.StaffShipmentStatusUpdateView.as_view(), name='status-update'),
+    
+    # Include router URLs
+    path('', include(router.urls)),
 ] 

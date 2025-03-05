@@ -11,8 +11,11 @@ from rest_framework.views import APIView
 
 from accounts.models import User
 
-from .models import ShipmentRequest
-from .serializers import ShipmentCreateSerializer, ShipmentRequestSerializer
+from .models import ShipmentRequest, ShipmentStatusLocation
+from .permissions import IsStaffUser
+from .serializers import (ShipmentCreateSerializer, ShipmentRequestSerializer,
+                          ShipmentStatusLocationSerializer,
+                          StatusUpdateSerializer)
 
 # Create your views here.
 
@@ -84,15 +87,15 @@ class ShipmentDetailView(APIView):
         shipment = self.get_object(pk)
         
         # Only allow updating certain fields
-        allowed_fields = {'notes', 'recipient_address', 'recipient_phone'}
-        data = {
-            k: v for k, v in request.data.items() 
-            if k in allowed_fields
-        }
+        # allowed_fields = {'notes', 'recipient_address', 'recipient_phone'}
+        # data = {
+        #     k: v for k, v in request.data.items() 
+        #     if k in allowed_fields
+        # }
         
         serializer = ShipmentRequestSerializer(
             shipment,
-            data=data,
+            data=request.data,
             partial=True
         )
         
@@ -700,3 +703,128 @@ class AssignStaffToShipmentView(APIView):
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+@extend_schema(tags=['shipments'])
+class ShipmentStatusLocationViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for listing available status locations for shipment updates.
+    Only accessible by staff members.
+    """
+    queryset = ShipmentStatusLocation.objects.filter(is_active=True)
+    serializer_class = ShipmentStatusLocationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsStaffUser]
+    
+    def get_queryset(self):
+        """Filter status locations based on query parameters"""
+        queryset = super().get_queryset()
+        
+        # Filter by status type if provided
+        status_type = self.request.query_params.get('status_type')
+        if status_type:
+            queryset = queryset.filter(status_type=status_type)
+            
+        return queryset.order_by('display_order', 'status_type')
+
+
+@extend_schema(tags=['shipments'])
+class StaffShipmentStatusUpdateView(APIView):
+    """
+    View for staff to update shipment status using available status locations
+    """
+    permission_classes = [permissions.IsAuthenticated, IsStaffUser]
+    
+    @extend_schema(
+        summary="Get available status locations",
+        description="Get all available status locations for updating shipment status",
+        parameters=[
+            OpenApiParameter(
+                name='shipment_id',
+                type=str,
+                location=OpenApiParameter.PATH,
+                description='ID of the shipment to update'
+            ),
+            OpenApiParameter(
+                name='status_type',
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description='Filter by status type (e.g., PROCESSING, IN_TRANSIT)'
+            )
+        ]
+    )
+    def get(self, request, shipment_id):
+        """Get available status locations for updating a shipment"""
+        # Verify the shipment exists and staff has access
+        shipment = self.get_shipment(shipment_id, request.user)
+        
+        # Get status locations filtered by status type if provided
+        status_type = request.query_params.get('status_type')
+        if status_type:
+            locations = ShipmentStatusLocation.objects.filter(
+                is_active=True,
+                status_type=status_type
+            )
+        else:
+            locations = ShipmentStatusLocation.objects.filter(is_active=True)
+            
+        # Order by display_order
+        locations = locations.order_by('display_order', 'status_type')
+        
+        serializer = ShipmentStatusLocationSerializer(locations, many=True)
+        
+        return Response({
+            'shipment': {
+                'id': shipment.id,
+                'tracking_number': shipment.tracking_number,
+                'current_status': shipment.status,
+                'current_location': shipment.current_location
+            },
+            'available_status_locations': serializer.data
+        })
+    
+    @extend_schema(
+        summary="Update shipment status",
+        description="Update shipment status using a status location",
+        request=StatusUpdateSerializer
+    )
+    def post(self, request, shipment_id):
+        """Update shipment status"""
+        # Verify the shipment exists and staff has access
+        shipment = self.get_shipment(shipment_id, request.user)
+        
+        # Validate the request data
+        serializer = StatusUpdateSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            # Update the shipment status
+            updated_shipment = serializer.update(shipment, serializer.validated_data)
+            
+            # Return the updated shipment
+            return Response({
+                'success': True,
+                'message': f"Shipment status updated to {updated_shipment.get_status_display()}",
+                'shipment': {
+                    'id': updated_shipment.id,
+                    'tracking_number': updated_shipment.tracking_number,
+                    'status': updated_shipment.status,
+                    'current_location': updated_shipment.current_location,
+                    'updated_at': updated_shipment.updated_at
+                },
+                'tracking_update': updated_shipment.tracking_history[-1] if updated_shipment.tracking_history else None
+            })
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get_shipment(self, shipment_id, staff_user):
+        """Get shipment and verify staff access"""
+        shipment = get_object_or_404(ShipmentRequest, id=shipment_id)
+        
+        # Verify the shipment is assigned to this staff member
+        if shipment.staff_id != staff_user.id:
+            raise PermissionError(
+                "You don't have permission to manage this shipment"
+            )
+            
+        return shipment

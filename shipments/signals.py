@@ -1,10 +1,13 @@
+import logging
+from decimal import Decimal
+
+from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from django.core.exceptions import ObjectDoesNotExist
-from django.conf import settings
-import logging
-from .models import ShipmentRequest
+
 from .email import send_shipment_created_email, send_status_update_email
+from .models import ShipmentRequest
 
 logger = logging.getLogger(__name__)
 
@@ -37,3 +40,22 @@ def handle_shipment_notifications(sender, instance, created, **kwargs):
         )
         if settings.DEBUG:
             raise  # Re-raise the exception in debug mode 
+        
+
+
+@receiver(post_save, sender=ShipmentRequest)
+def handle_shipment_payment_method(sender, instance, created, **kwargs):
+    """
+    Handle payment method and extra charges for shipment
+    """
+    if instance.payment_method == ShipmentRequest.PaymentMethod.COD:
+        instance.cod_amount = instance.total_cost * Decimal("0.05")
+
+        # Save only the `cod_amount` field to avoid re-triggering the signal
+        ShipmentRequest.objects.filter(id=instance.id).update(cod_amount=instance.cod_amount)
+
+    elif instance.payment_method == ShipmentRequest.PaymentMethod.ONLINE:
+        instance.cod_amount = Decimal("0")
+
+        # Save only `cod_amount` to prevent recursion
+        ShipmentRequest.objects.filter(id=instance.id).update(cod_amount=instance.cod_amount)
