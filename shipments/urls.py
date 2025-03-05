@@ -8,6 +8,8 @@ app_name = 'shipments'
 # Create a router for ViewSets
 router = DefaultRouter()
 router.register(r'status-locations', views.ShipmentStatusLocationViewSet, basename='status-locations')
+router.register(r'shipments', views.ShipmentRequestViewSet, basename='shipment')
+router.register(r'support', views.SupportTicketViewSet, basename='support-ticket')
 
 urlpatterns = [
     path('', views.ShipmentListCreateView.as_view(), name='shipment-list-create'),

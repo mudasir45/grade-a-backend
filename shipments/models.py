@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.files.base import ContentFile
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.crypto import get_random_string
@@ -367,5 +367,191 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
             'description': description or dict(self.Status.choices)[status]
         })
         self.save()
+
+
+class SupportTicket(models.Model):
+    """Model for handling support tickets from users"""
+    
+    class Status(models.TextChoices):
+        OPEN = 'OPEN', _('Open')
+        IN_PROGRESS = 'IN_PROGRESS', _('In Progress')
+        RESOLVED = 'RESOLVED', _('Resolved')
+        CLOSED = 'CLOSED', _('Closed')
+    
+    class Category(models.TextChoices):
+        SHIPPING = 'SHIPPING', _('Shipping Issue')
+        PAYMENT = 'PAYMENT', _('Payment Issue')
+        TRACKING = 'TRACKING', _('Tracking Issue')
+        DELIVERY = 'DELIVERY', _('Delivery Issue')
+        PICKUP = 'PICKUP', _('Pickup Issue')
+        OTHER = 'OTHER', _('Other')
+    
+    # Basic Information
+    ticket_number = models.CharField(
+        max_length=12,
+        unique=True,
+        editable=False,
+        help_text=_("Unique ticket identifier")
+    )
+    subject = models.CharField(
+        max_length=255,
+        help_text=_("Brief description of the issue")
+    )
+    message = models.TextField(
+        help_text=_("Detailed description of the issue")
+    )
+    category = models.CharField(
+        max_length=20,
+        choices=Category.choices,
+        help_text=_("Category of the support ticket")
+    )
+    
+    # Status and Assignment
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.OPEN,
+        help_text=_("Current status of the ticket")
+    )
+    priority = models.PositiveSmallIntegerField(
+        default=1,
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+        help_text=_("Priority level (1-5)")
+    )
+    
+    # Relationships
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='support_tickets',
+        help_text=_("User who created the ticket")
+    )
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_tickets',
+        help_text=_("Staff member assigned to handle this ticket")
+    )
+    shipment = models.ForeignKey(
+        'ShipmentRequest',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='support_tickets',
+        help_text=_("Related shipment if applicable")
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("When the ticket was resolved")
+    )
+    
+    # Response tracking
+    response_time = models.DurationField(
+        null=True,
+        blank=True,
+        help_text=_("Time taken for first response")
+    )
+    resolution_time = models.DurationField(
+        null=True,
+        blank=True,
+        help_text=_("Time taken to resolve the ticket")
+    )
+    
+    # Communication history
+    communication_history = models.JSONField(
+        default=list,
+        help_text=_("History of all communications on this ticket")
+    )
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['ticket_number']),
+            models.Index(fields=['status']),
+            models.Index(fields=['created_at']),
+        ]
+    
+    def __str__(self):
+        return f"Ticket #{self.ticket_number} - {self.subject}"
+    
+    def save(self, *args, **kwargs):
+        if not self.ticket_number:
+            # Generate unique ticket number
+            prefix = 'TKT'
+            random_digits = get_random_string(9, '0123456789')
+            self.ticket_number = f"{prefix}{random_digits}"
+            
+            # Record creation time for response time tracking
+            self._was_created = True
+        else:
+            self._was_created = False
+            
+        # Track status changes
+        if self.pk:
+            old_instance = SupportTicket.objects.get(pk=self.pk)
+            if old_instance.status != self.status:
+                self._handle_status_change(old_instance.status, self.status)
+        
+        super().save(*args, **kwargs)
+        
+        # Send notifications after save
+        if self._was_created:
+            self.send_creation_notifications()
+    
+    def _handle_status_change(self, old_status, new_status):
+        """Handle status change related updates"""
+        now = timezone.now()
+        
+        # Record first response time
+        if not self.response_time and old_status == self.Status.OPEN:
+            self.response_time = now - self.created_at
+        
+        # Record resolution time
+        if new_status == self.Status.RESOLVED and not self.resolved_at:
+            self.resolved_at = now
+            self.resolution_time = now - self.created_at
+        
+        # Add status change to communication history
+        self.communication_history.append({
+            'type': 'status_change',
+            'from_status': old_status,
+            'to_status': new_status,
+            'timestamp': now.isoformat(),
+            'by_user': str(self.assigned_to) if self.assigned_to else 'System'
+        })
+    
+    def add_comment(self, user, comment):
+        """Add a comment to the ticket's communication history"""
+        self.communication_history.append({
+            'type': 'comment',
+            'user': str(user),
+            'is_staff': getattr(user, 'is_staff', False),
+            'comment': comment,
+            'timestamp': timezone.now().isoformat()
+        })
+        self.save()
+    
+    def send_creation_notifications(self):
+        """Send notifications when ticket is created"""
+        from .tasks import (send_ticket_creation_email_to_staff,
+                            send_ticket_creation_email_to_user)
+
+        # Send confirmation email to user
+        send_ticket_creation_email_to_user.delay(self.pk)
+        
+        # Send notification to staff
+        send_ticket_creation_email_to_staff.delay(self.pk)
+    
+    def send_status_update_notification(self):
+        """Send notification when ticket status is updated"""
+        from .tasks import send_ticket_status_update_email
+        send_ticket_status_update_email.delay(self.pk)
 
 

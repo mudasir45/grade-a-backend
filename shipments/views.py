@@ -11,11 +11,15 @@ from rest_framework.views import APIView
 
 from accounts.models import User
 
-from .models import ShipmentRequest, ShipmentStatusLocation
+from .models import ShipmentRequest, ShipmentStatusLocation, SupportTicket
 from .permissions import IsStaffUser
 from .serializers import (ShipmentCreateSerializer, ShipmentRequestSerializer,
                           ShipmentStatusLocationSerializer,
-                          StatusUpdateSerializer)
+                          StatusUpdateSerializer,
+                          SupportTicketCommentSerializer,
+                          SupportTicketCreateSerializer,
+                          SupportTicketSerializer,
+                          SupportTicketUpdateSerializer)
 
 # Create your views here.
 
@@ -840,3 +844,160 @@ class StaffShipmentStatusUpdateView(APIView):
                 )
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@extend_schema(tags=['support'])
+class SupportTicketViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing support tickets.
+    Users can create and view their tickets.
+    Staff can manage all tickets.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'ticket_number'
+    
+    def get_queryset(self):
+        """
+        Return all tickets for staff users.
+        Return only user's tickets for regular users.
+        """
+        queryset = SupportTicket.objects.select_related(
+            'user',
+            'assigned_to',
+            'shipment'
+        )
+        
+        if not self.request.user.is_staff:
+            queryset = queryset.filter(user=self.request.user)
+        
+        # Apply filters
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+            
+        category = self.request.query_params.get('category')
+        if category:
+            queryset = queryset.filter(category=category)
+            
+        priority = self.request.query_params.get('priority')
+        if priority:
+            queryset = queryset.filter(priority=priority)
+            
+        assigned_to = self.request.query_params.get('assigned_to')
+        if assigned_to:
+            queryset = queryset.filter(assigned_to=assigned_to)
+        
+        return queryset.order_by('-created_at')
+    
+    def get_serializer_class(self):
+        """Return appropriate serializer class based on action"""
+        if self.action == 'create':
+            return SupportTicketCreateSerializer
+        elif self.action in ['update', 'partial_update']:
+            return SupportTicketUpdateSerializer
+        return SupportTicketSerializer
+    
+    def get_permissions(self):
+        """
+        Instantiate and return the list of permissions that this view requires.
+        """
+        if self.action in ['update', 'partial_update', 'destroy']:
+            permission_classes = [permissions.IsAuthenticated, IsStaffUser]
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
+    @extend_schema(
+        summary="Add comment to ticket",
+        request=SupportTicketCommentSerializer,
+        responses={200: SupportTicketSerializer}
+    )
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='comment',
+        permission_classes=[permissions.IsAuthenticated]
+    )
+    def add_comment(self, request, ticket_number=None):
+        """Add a comment to a support ticket"""
+        ticket = self.get_object()
+        
+        # Check if user has permission to comment
+        if not request.user.is_staff and request.user != ticket.user:
+            return Response(
+                {"detail": "You don't have permission to comment on this ticket"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = SupportTicketCommentSerializer(
+            data=request.data,
+            context={'request': request, 'ticket': ticket}
+        )
+        
+        if serializer.is_valid():
+            ticket = serializer.save()
+            response_serializer = SupportTicketSerializer(ticket)
+            return Response(response_serializer.data)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @extend_schema(
+        summary="Get ticket statistics",
+        responses={200: OpenApiTypes.OBJECT}
+    )
+    @action(
+        detail=False,
+        methods=['get'],
+        url_path='stats',
+        permission_classes=[permissions.IsAuthenticated, IsStaffUser]
+    )
+    def get_stats(self, request):
+        """Get statistics about support tickets"""
+        # Get base queryset
+        queryset = self.get_queryset()
+        
+        # Calculate statistics
+        total_tickets = queryset.count()
+        open_tickets = queryset.filter(status=SupportTicket.Status.OPEN).count()
+        in_progress = queryset.filter(
+            status=SupportTicket.Status.IN_PROGRESS
+        ).count()
+        resolved = queryset.filter(
+            status=SupportTicket.Status.RESOLVED
+        ).count()
+        
+        # Calculate average response and resolution times
+        avg_response_time = queryset.exclude(
+            response_time__isnull=True
+        ).aggregate(
+            avg_time=Avg('response_time')
+        )['avg_time']
+        
+        avg_resolution_time = queryset.exclude(
+            resolution_time__isnull=True
+        ).aggregate(
+            avg_time=Avg('resolution_time')
+        )['avg_time']
+        
+        # Get category distribution
+        category_distribution = (
+            queryset
+            .values('category')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+        
+        return Response({
+            'total_tickets': total_tickets,
+            'open_tickets': open_tickets,
+            'in_progress_tickets': in_progress,
+            'resolved_tickets': resolved,
+            'avg_response_time_seconds': (
+                avg_response_time.total_seconds()
+                if avg_response_time else None
+            ),
+            'avg_resolution_time_seconds': (
+                avg_resolution_time.total_seconds()
+                if avg_resolution_time else None
+            ),
+            'category_distribution': category_distribution
+        })

@@ -5,7 +5,7 @@ from rest_framework import serializers
 from shipping_rates.models import (Country, DimensionalFactor, ServiceType,
                                    ShippingZone, WeightBasedRate)
 
-from .models import ShipmentRequest, ShipmentStatusLocation
+from .models import ShipmentRequest, ShipmentStatusLocation, SupportTicket
 
 
 class ShipmentRequestSerializer(serializers.ModelSerializer):
@@ -216,3 +216,117 @@ class StatusUpdateSerializer(serializers.Serializer):
         )
         
         return instance 
+
+
+class SupportTicketSerializer(serializers.ModelSerializer):
+    """Serializer for support tickets with full details"""
+    user = UserSerializer(read_only=True)
+    assigned_to = UserSerializer(read_only=True)
+    shipment = ShipmentRequestSerializer(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+    
+    class Meta:
+        model = SupportTicket
+        fields = [
+            'id', 'ticket_number', 'subject', 'message', 'category',
+            'category_display', 'status', 'status_display', 'priority',
+            'user', 'assigned_to', 'shipment', 'created_at', 'updated_at',
+            'resolved_at', 'response_time', 'resolution_time',
+            'communication_history'
+        ]
+        read_only_fields = [
+            'ticket_number', 'created_at', 'updated_at', 'resolved_at',
+            'response_time', 'resolution_time', 'communication_history'
+        ]
+
+
+class SupportTicketCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating support tickets"""
+    shipment_id = serializers.CharField(required=False, write_only=True)
+    
+    class Meta:
+        model = SupportTicket
+        fields = [
+            'subject', 'message', 'category', 'priority', 'shipment_id'
+        ]
+    
+    def validate_shipment_id(self, value):
+        """Validate the shipment exists and belongs to the user"""
+        if value:
+            try:
+                shipment = ShipmentRequest.objects.get(
+                    id=value,
+                    user=self.context['request'].user
+                )
+                return shipment.id
+            except ShipmentRequest.DoesNotExist:
+                raise serializers.ValidationError(
+                    "Invalid shipment ID or shipment does not belong to you"
+                )
+        return None
+    
+    def create(self, validated_data):
+        """Create a new support ticket"""
+        shipment_id = validated_data.pop('shipment_id', None)
+        user = self.context['request'].user
+        
+        # Create the ticket
+        ticket = SupportTicket.objects.create(
+            user=user,
+            **validated_data
+        )
+        
+        # Associate shipment if provided
+        if shipment_id:
+            ticket.shipment_id = shipment_id
+            ticket.save()
+        
+        return ticket
+
+
+class SupportTicketUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating support tickets by staff"""
+    comment = serializers.CharField(write_only=True, required=False)
+    
+    class Meta:
+        model = SupportTicket
+        fields = ['status', 'priority', 'assigned_to', 'comment']
+    
+    def validate_assigned_to(self, value):
+        """Ensure assigned user is staff"""
+        if value and not value.is_staff:
+            raise serializers.ValidationError(
+                "Ticket can only be assigned to staff members"
+            )
+        return value
+    
+    def update(self, instance, validated_data):
+        """Update the ticket and add comment if provided"""
+        comment = validated_data.pop('comment', None)
+        user = self.context['request'].user
+        
+        # Update the ticket
+        ticket = super().update(instance, validated_data)
+        
+        # Add comment if provided
+        if comment:
+            ticket.add_comment(user, comment)
+        
+        # Send notification if status changed
+        if 'status' in validated_data:
+            ticket.send_status_update_notification()
+        
+        return ticket
+
+
+class SupportTicketCommentSerializer(serializers.Serializer):
+    """Serializer for adding comments to support tickets"""
+    comment = serializers.CharField(required=True)
+    
+    def create(self, validated_data):
+        ticket = self.context['ticket']
+        user = self.context['request'].user
+        
+        ticket.add_comment(user, validated_data['comment'])
+        return ticket 

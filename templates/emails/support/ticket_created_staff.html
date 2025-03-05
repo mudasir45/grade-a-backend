@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        color: #333;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .header {
+        background-color: #f8f9fa;
+        padding: 20px;
+        text-align: center;
+        border-radius: 5px;
+      }
+      .content {
+        padding: 20px 0;
+      }
+      .ticket-info {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 20px 0;
+      }
+      .user-info {
+        background-color: #e9ecef;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 20px 0;
+      }
+      .action-button {
+        display: inline-block;
+        padding: 10px 20px;
+        background-color: #007bff;
+        color: white;
+        text-decoration: none;
+        border-radius: 5px;
+        margin: 20px 0;
+      }
+      .priority-high {
+        color: #dc3545;
+        font-weight: bold;
+      }
+      .footer {
+        text-align: center;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h2>New Support Ticket</h2>
+      </div>
+
+      <div class="content">
+        <p>A new support ticket has been created and requires attention.</p>
+
+        <div class="ticket-info">
+          <h3>Ticket Details:</h3>
+          <p><strong>Ticket Number:</strong> {{ ticket.ticket_number }}</p>
+          <p><strong>Subject:</strong> {{ ticket.subject }}</p>
+          <p><strong>Category:</strong> {{ ticket.get_category_display }}</p>
+          <p><strong>Status:</strong> {{ ticket.get_status_display }}</p>
+          <p>
+            <strong>Priority:</strong>
+            {% if ticket.priority >= 4 %}
+            <span class="priority-high">High Priority</span>
+            {% else %} Normal Priority {% endif %}
+          </p>
+          <p>
+            <strong>Created:</strong> {{ ticket.created_at|date:"F j, Y, g:i a"
+            }}
+          </p>
+        </div>
+
+        <div class="user-info">
+          <h3>User Information:</h3>
+          <p>
+            <strong>Name:</strong> {{ user.get_full_name|default:"Not provided"
+            }}
+          </p>
+          <p><strong>Email:</strong> {{ user.email }}</p>
+          {% if ticket.shipment %}
+          <p>
+            <strong>Related Shipment:</strong> {{
+            ticket.shipment.tracking_number }}
+          </p>
+          {% endif %}
+        </div>
+
+        <div class="ticket-info">
+          <h3>Message:</h3>
+          <p>{{ ticket.message }}</p>
+        </div>
+
+        <a href="{{ admin_url }}" class="action-button">View in Admin Panel</a>
+
+        <p>Please review and assign this ticket as soon as possible.</p>
+      </div>
+
+      <div class="footer">
+        <p>This is an automated message from the support system.</p>
+      </div>
+    </div>
+  </body>
+</html>

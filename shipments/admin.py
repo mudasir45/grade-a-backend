@@ -1,11 +1,14 @@
 from django.contrib import admin, messages
 from django.contrib.auth import get_user_model
-from django.db.models import Q
+from django.db.models import Avg, Count, Q
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.utils.html import format_html
 
-from .models import ShipmentRequest, ShipmentStatusLocation
+from accounts.models import User
+
+from .models import ShipmentRequest, ShipmentStatusLocation, SupportTicket
 
 
 class StaffAssignmentFilter(admin.SimpleListFilter):
@@ -297,3 +300,190 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             User = get_user_model()
             kwargs["queryset"] = User.objects.filter(is_staff=True)
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+@admin.register(SupportTicket)
+class SupportTicketAdmin(admin.ModelAdmin):
+    """Admin interface for support tickets"""
+    list_display = [
+        'ticket_number',
+        'subject',
+        'category',
+        'status_badge',
+        'priority',
+        'user_link',
+        'assigned_to_link',
+        'created_at',
+        'response_time_display'
+    ]
+    
+    list_filter = [
+        'status',
+        'category',
+        'priority',
+        'created_at',
+        'resolved_at',
+        ('assigned_to', admin.EmptyFieldListFilter),
+    ]
+    
+    search_fields = [
+        'ticket_number',
+        'subject',
+        'message',
+        'user__email',
+        'user__first_name',
+        'user__last_name',
+        'assigned_to__email'
+    ]
+    
+    readonly_fields = [
+        'ticket_number',
+        'created_at',
+        'updated_at',
+        'resolved_at',
+        'response_time',
+        'resolution_time',
+        'communication_history_display'
+    ]
+    
+    fieldsets = [
+        ('Ticket Information', {
+            'fields': (
+                'ticket_number',
+                'subject',
+                'message',
+                'category',
+                'priority'
+            )
+        }),
+        ('Status & Assignment', {
+            'fields': (
+                'status',
+                'assigned_to',
+                'shipment'
+            )
+        }),
+        ('Timing Information', {
+            'fields': (
+                'created_at',
+                'updated_at',
+                'resolved_at',
+                'response_time',
+                'resolution_time'
+            )
+        }),
+        ('Communication History', {
+            'fields': ('communication_history_display',)
+        })
+    ]
+    
+    actions = ['mark_as_in_progress', 'mark_as_resolved', 'mark_as_closed']
+    
+    def get_queryset(self, request):
+        """Optimize queryset for admin listing"""
+        return super().get_queryset(request).select_related(
+            'user',
+            'assigned_to',
+            'shipment'
+        )
+    
+    def status_badge(self, obj):
+        """Display status with color-coded badge"""
+        colors = {
+            'OPEN': 'red',
+            'IN_PROGRESS': 'orange',
+            'RESOLVED': 'green',
+            'CLOSED': 'gray'
+        }
+        return format_html(
+            '<span style="color: {}; font-weight: bold">{}</span>',
+            colors.get(obj.status, 'black'),
+            obj.get_status_display()
+        )
+    status_badge.short_description = 'Status'
+    status_badge.admin_order_field = 'status'
+    
+    def user_link(self, obj):
+        """Display link to user"""
+        url = reverse('admin:accounts_user_change', args=[obj.user.id])
+        return format_html('<a href="{}">{}</a>', url, obj.user.email)
+    user_link.short_description = 'User'
+    user_link.admin_order_field = 'user__email'
+    
+    def assigned_to_link(self, obj):
+        """Display link to assigned staff member"""
+        if obj.assigned_to:
+            url = reverse('admin:accounts_user_change', args=[obj.assigned_to.id])
+            return format_html('<a href="{}">{}</a>', url, obj.assigned_to.email)
+        return '-'
+    assigned_to_link.short_description = 'Assigned To'
+    assigned_to_link.admin_order_field = 'assigned_to__email'
+    
+    def response_time_display(self, obj):
+        """Display response time in a human-readable format"""
+        if obj.response_time:
+            hours = obj.response_time.total_seconds() / 3600
+            if hours < 24:
+                return f"{hours:.1f} hours"
+            days = hours / 24
+            return f"{days:.1f} days"
+        return '-'
+    response_time_display.short_description = 'Response Time'
+    response_time_display.admin_order_field = 'response_time'
+    
+    def communication_history_display(self, obj):
+        """Display communication history in a readable format"""
+        if not obj.communication_history:
+            return "No communication history"
+            
+        html = ['<div style="max-height: 400px; overflow-y: auto;">']
+        for entry in obj.communication_history:
+            timestamp = parse_datetime(entry['timestamp'])
+            formatted_time = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            
+            if entry['type'] == 'comment':
+                html.append(
+                    f'<p><strong>{entry["user"]}</strong> '
+                    f'({formatted_time}):<br>'
+                    f'{entry["comment"]}</p>'
+                )
+            elif entry['type'] == 'status_change':
+                html.append(
+                    f'<p><em>Status changed from {entry["from_status"]} to '
+                    f'{entry["to_status"]} by {entry["by_user"]} '
+                    f'({formatted_time})</em></p>'
+                )
+        
+        html.append('</div>')
+        return format_html(''.join(html))
+    communication_history_display.short_description = 'Communication History'
+    
+    def mark_as_in_progress(self, request, queryset):
+        """Mark selected tickets as in progress"""
+        updated = queryset.update(
+            status=SupportTicket.Status.IN_PROGRESS,
+            assigned_to=request.user
+        )
+        self.message_user(
+            request,
+            f"{updated} tickets marked as in progress and assigned to you."
+        )
+    mark_as_in_progress.short_description = "Mark selected tickets as in progress"
+    
+    def mark_as_resolved(self, request, queryset):
+        """Mark selected tickets as resolved"""
+        updated = queryset.update(
+            status=SupportTicket.Status.RESOLVED,
+            resolved_at=timezone.now()
+        )
+        self.message_user(
+            request,
+            f"{updated} tickets marked as resolved."
+        )
+    mark_as_resolved.short_description = "Mark selected tickets as resolved"
+    
+    def mark_as_closed(self, request, queryset):
+        """Mark selected tickets as closed"""
+        updated = queryset.update(status=SupportTicket.Status.CLOSED)
+        self.message_user(request, f"{updated} tickets marked as closed.")
+    mark_as_closed.short_description = "Mark selected tickets as closed"
