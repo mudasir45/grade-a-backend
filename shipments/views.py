@@ -729,9 +729,23 @@ class ShipmentStatusLocationViewSet(viewsets.ReadOnlyModelViewSet):
 @extend_schema(tags=['shipments'])
 class StaffShipmentStatusUpdateView(APIView):
     """
-    View for staff to update shipment status using available status locations
+    View for staff to update shipment status using available status locations.
+    Any staff member can view and update shipment statuses.
     """
     permission_classes = [permissions.IsAuthenticated, IsStaffUser]
+    
+    def get_shipment(self, shipment_id, staff_user):
+        """Get shipment and verify it exists"""
+        return get_object_or_404(
+            ShipmentRequest.objects.select_related(
+                'sender_country',
+                'recipient_country',
+                'service_type',
+                'user',
+                'staff'
+            ),
+            pk=shipment_id
+        )
     
     @extend_schema(
         summary="Get available status locations",
@@ -753,18 +767,15 @@ class StaffShipmentStatusUpdateView(APIView):
     )
     def get(self, request, shipment_id):
         """Get available status locations for updating a shipment"""
-        # Verify the shipment exists and staff has access
+        # Get the shipment
         shipment = self.get_shipment(shipment_id, request.user)
         
         # Get status locations filtered by status type if provided
         status_type = request.query_params.get('status_type')
+        locations = ShipmentStatusLocation.objects.filter(is_active=True)
+        
         if status_type:
-            locations = ShipmentStatusLocation.objects.filter(
-                is_active=True,
-                status_type=status_type
-            )
-        else:
-            locations = ShipmentStatusLocation.objects.filter(is_active=True)
+            locations = locations.filter(status_type=status_type)
             
         # Order by display_order
         locations = locations.order_by('display_order', 'status_type')
@@ -776,7 +787,8 @@ class StaffShipmentStatusUpdateView(APIView):
                 'id': shipment.id,
                 'tracking_number': shipment.tracking_number,
                 'current_status': shipment.status,
-                'current_location': shipment.current_location
+                'current_location': shipment.current_location,
+                'staff': shipment.staff.email if shipment.staff else None
             },
             'available_status_locations': serializer.data
         })
@@ -788,7 +800,7 @@ class StaffShipmentStatusUpdateView(APIView):
     )
     def post(self, request, shipment_id):
         """Update shipment status"""
-        # Verify the shipment exists and staff has access
+        # Get the shipment
         shipment = self.get_shipment(shipment_id, request.user)
         
         # Validate the request data
@@ -798,33 +810,33 @@ class StaffShipmentStatusUpdateView(APIView):
         )
         
         if serializer.is_valid():
-            # Update the shipment status
-            updated_shipment = serializer.update(shipment, serializer.validated_data)
-            
-            # Return the updated shipment
-            return Response({
-                'success': True,
-                'message': f"Shipment status updated to {updated_shipment.get_status_display()}",
-                'shipment': {
-                    'id': updated_shipment.id,
-                    'tracking_number': updated_shipment.tracking_number,
-                    'status': updated_shipment.status,
-                    'current_location': updated_shipment.current_location,
-                    'updated_at': updated_shipment.updated_at
-                },
-                'tracking_update': updated_shipment.tracking_history[-1] if updated_shipment.tracking_history else None
-            })
+            try:
+                # Update the shipment status
+                updated_shipment = serializer.update(shipment, serializer.validated_data)
+                
+                # If the shipment doesn't have a staff member assigned, assign the current user
+                if not updated_shipment.staff:
+                    updated_shipment.staff = request.user
+                    updated_shipment.save()
+                
+                # Return the updated shipment
+                return Response({
+                    'success': True,
+                    'message': f"Shipment status updated to {updated_shipment.get_status_display()}",
+                    'shipment': {
+                        'id': updated_shipment.id,
+                        'tracking_number': updated_shipment.tracking_number,
+                        'status': updated_shipment.status,
+                        'current_location': updated_shipment.current_location,
+                        'updated_at': updated_shipment.updated_at,
+                        'staff': updated_shipment.staff.email if updated_shipment.staff else None
+                    },
+                    'tracking_update': updated_shipment.tracking_history[-1] if updated_shipment.tracking_history else None
+                })
+            except Exception as e:
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    def get_shipment(self, shipment_id, staff_user):
-        """Get shipment and verify staff access"""
-        shipment = get_object_or_404(ShipmentRequest, id=shipment_id)
-        
-        # Verify the shipment is assigned to this staff member
-        if shipment.staff_id != staff_user.id:
-            raise PermissionError(
-                "You don't have permission to manage this shipment"
-            )
-            
-        return shipment
