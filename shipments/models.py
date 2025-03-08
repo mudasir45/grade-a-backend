@@ -120,6 +120,16 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         help_text=_('Staff member assigned to handle this shipment')
     )
 
+    # Driver Information
+    driver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='driver_shipments',
+        null=True,
+        blank=True,
+        help_text=_('Driver assigned to deliver this shipment')
+    )
+
     # Payment Information
     payment_method = models.CharField(
         max_length=20,

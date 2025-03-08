@@ -3,7 +3,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import Contact, Store, User, UserCountry
+from .models import (Contact, DeliveryCommission, DriverProfile, Store, User,
+                     UserCountry)
 
 
 @admin.register(User)
@@ -61,3 +62,27 @@ class ContactAdmin(admin.ModelAdmin):
         }),
     )
     ordering = ('-created_at',)
+
+@admin.register(DriverProfile)
+class DriverProfileAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'vehicle_type', 'is_active', 'total_deliveries', 'total_earnings')
+    list_filter = ('is_active', 'vehicle_type', 'created_at')
+    search_fields = ('user__username', 'user__email', 'license_number', 'vehicle_plate')
+    readonly_fields = ('total_earnings', 'total_deliveries', 'created_at', 'updated_at')
+    fieldsets = (
+        (None, {'fields': ('user', 'is_active')}),
+        (_('Vehicle Information'), {'fields': ('vehicle_type', 'license_number', 'vehicle_plate')}),
+        (_('Commission Info'), {'fields': ('commission_rate', 'total_earnings', 'total_deliveries')}),
+        (_('Dates'), {'fields': ('created_at', 'updated_at')}),
+    )
+
+@admin.register(DeliveryCommission)
+class DeliveryCommissionAdmin(admin.ModelAdmin):
+    list_display = ('id', 'driver', 'delivery_type', 'reference_id', 'amount', 'earned_at')
+    list_filter = ('delivery_type', 'earned_at')
+    search_fields = ('driver__user__username', 'reference_id', 'description')
+    readonly_fields = ('earned_at',)
+    fieldsets = (
+        (None, {'fields': ('driver', 'delivery_type', 'reference_id', 'amount')}),
+        (_('Additional Information'), {'fields': ('description', 'earned_at')}),
+    )

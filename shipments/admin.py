@@ -5,7 +5,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from accounts.models import User
+from accounts.models import DriverProfile, User
 
 from .models import ShipmentRequest, ShipmentStatusLocation, SupportTicket
 
@@ -29,6 +29,26 @@ class StaffAssignmentFilter(admin.SimpleListFilter):
         return queryset
 
 
+class DriverFilter(admin.SimpleListFilter):
+    """Filter shipments by driver status"""
+    title = 'Driver'
+    parameter_name = 'driver'
+    
+    def lookups(self, request, model_admin):
+        # Get all active drivers
+        drivers = User.objects.filter(
+            driver_profile__is_active=True
+        ).values_list('id', 'email')
+        return [('none', 'No driver')] + [(str(id), email) for id, email in drivers]
+    
+    def queryset(self, request, queryset):
+        if self.value() == 'none':
+            return queryset.filter(driver=None)
+        if self.value():
+            return queryset.filter(driver_id=self.value())
+        return queryset
+
+
 @admin.register(ShipmentStatusLocation)
 class ShipmentStatusLocationAdmin(admin.ModelAdmin):
     """Admin interface for managing shipment status locations"""
@@ -46,18 +66,17 @@ class ShipmentStatusLocationAdmin(admin.ModelAdmin):
 class ShipmentRequestAdmin(admin.ModelAdmin):
     list_display = [
         'tracking_number', 'status_badge', 'payment_status_badge',
-        'user_link', 'staff_link', 'sender_name', 'recipient_name',
-        'service_type', 'total_cost_display', 'receipt_download', 'id', 'created_at'
+        'user_link', 'staff_link', 'driver_link', 'sender_name', 'recipient_name',
+        'service_type', 'total_cost_display', 'receipt_download', 'created_at'
     ]
     list_filter = [
         'status', 'payment_method', 'payment_status',
-        'service_type', 'created_at', 'staff',
-        StaffAssignmentFilter
+        'service_type', 'created_at', StaffAssignmentFilter, DriverFilter
     ]
     search_fields = [
         'tracking_number', 'sender_name', 'recipient_name', 
         'current_location', 'user__email', 'staff__email',
-        'transaction_id'
+        'driver__email', 'transaction_id'
     ]
     readonly_fields = [
         'tracking_number', 'tracking_history',
@@ -65,17 +84,21 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         'cod_amount', 'total_cost'
     ]
     
-    # Base actions that are always available
     actions = [
         'assign_to_me',
         'unassign_staff',
         'mark_payment_as_paid',
-        'mark_payment_as_failed'
+        'mark_payment_as_failed',
+        'assign_to_driver',
+        'unassign_driver'
     ]
     
     fieldsets = (
-        ('User Information', {
-            'fields': ('user', 'staff')
+        ('Assignment Information', {
+            'fields': (
+                'user',
+                ('staff', 'driver')
+            )
         }),
         ('Tracking Information', {
             'fields': (
@@ -126,85 +149,46 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         }),
     )
     
-    def get_actions(self, request):
-        """
-        Dynamically add status update actions based on ShipmentStatusLocation entries
-        """
-        actions = super().get_actions(request)
-        
-        # Get all active status locations
-        status_locations = ShipmentStatusLocation.objects.filter(is_active=True)
-        
-        # Group by status type
-        status_groups = {}
-        for location in status_locations:
-            if location.status_type not in status_groups:
-                status_groups[location.status_type] = []
-            status_groups[location.status_type].append(location)
-        
-        # Add dynamic actions for each status location
-        for status_type, locations in status_groups.items():
-            for location in locations:
-                action_name = f"mark_as_{status_type.lower()}_{location.id}"
-                action_display_name = f"Mark as {location.get_status_type_display()} - {location.location_name}"
-                
-                # Create a closure to capture the current location
-                def make_action(loc):
-                    def action(modeladmin, request, queryset):
-                        # Get the corresponding ShipmentRequest.Status
-                        status_mapping = ShipmentStatusLocation.get_status_mapping()
-                        shipment_status = status_mapping.get(loc.status_type)
-                        
-                        for shipment in queryset:
-                            shipment.update_tracking(
-                                shipment_status,
-                                loc.location_name,
-                                loc.description
-                            )
-                        
-                        count = queryset.count()
-                        modeladmin.message_user(
-                            request,
-                            f"Successfully updated {count} shipments to {loc.get_status_type_display()} at {loc.location_name}",
-                            messages.SUCCESS
-                        )
-                    
-                    # Set a unique name for the function
-                    action.__name__ = action_name
-                    action.short_description = action_display_name
-                    return action
-                
-                actions[action_name] = (make_action(location), action_name, action_display_name)
-        
-        return actions
-    
-    def user_link(self, obj):
-        if obj.user:
-            try:
-                # Try to get the app label and model name from the user model
-                app_label = obj.user._meta.app_label
-                model_name = obj.user._meta.model_name
-                url = reverse(f"admin:{app_label}_{model_name}_change", args=[obj.user.id])
-                return format_html('<a href="{}">{}</a>', url, obj.user.email)
-            except:
-                # Fallback to just showing the email without a link
-                return obj.user.email
-        return "-"
-    user_link.short_description = 'User'
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        if 'staff' in form.base_fields:
+            # Limit staff field to only show staff members
+            form.base_fields['staff'].queryset = User.objects.filter(
+                is_staff=True
+            ).exclude(user_type='DRIVER')
+            form.base_fields['staff'].label = "Assign Staff"
+        if 'driver' in form.base_fields:
+            # Limit driver field to only show active drivers
+            form.base_fields['driver'].queryset = User.objects.filter(
+                driver_profile__is_active=True,
+                user_type='DRIVER'
+            )
+            form.base_fields['driver'].label = "Assign Driver"
+        return form
     
     def staff_link(self, obj):
         if obj.staff:
             try:
-                # Try to get the app label and model name from the staff user model
                 app_label = obj.staff._meta.app_label
                 model_name = obj.staff._meta.model_name
                 url = reverse(f"admin:{app_label}_{model_name}_change", args=[obj.staff.id])
                 return format_html('<a href="{}">{}</a>', url, obj.staff.email)
             except:
-                # Fallback to just showing the email without a link
                 return obj.staff.email
         return "-"
     staff_link.short_description = 'Staff'
+    
+    def driver_link(self, obj):
+        if obj.driver:
+            try:
+                app_label = obj.driver._meta.app_label
+                model_name = obj.driver._meta.model_name
+                url = reverse(f"admin:{app_label}_{model_name}_change", args=[obj.driver.id])
+                return format_html('<a href="{}">{}</a>', url, obj.driver.email)
+            except:
+                return obj.driver.email
+        return "-"
+    driver_link.short_description = 'Driver'
     
     def assign_to_me(self, request, queryset):
         """Assign selected shipments to the current user if they have staff status"""
@@ -224,6 +208,88 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         updated = queryset.update(staff=None)
         self.message_user(request, f"{updated} shipments unassigned from staff.")
     unassign_staff.short_description = "Unassign staff from selected shipments"
+    
+    def unassign_driver(self, request, queryset):
+        updated = queryset.update(driver=None)
+        self.message_user(request, f"{updated} shipments unassigned from driver.")
+    unassign_driver.short_description = "Unassign driver from selected shipments"
+    
+    def assign_to_driver(self, request, queryset):
+        """Action to assign selected shipments to a driver"""
+        if request.POST.get('driver_id'):
+            driver_id = request.POST.get('driver_id')
+            try:
+                driver = User.objects.get(
+                    id=driver_id,
+                    driver_profile__is_active=True,
+                    user_type='DRIVER'
+                )
+                updated = queryset.update(driver=driver)
+                self.message_user(
+                    request,
+                    f"{updated} shipments assigned to driver {driver.email}",
+                    messages.SUCCESS
+                )
+                return None
+            except User.DoesNotExist:
+                self.message_user(
+                    request,
+                    "Selected driver not found or is not active",
+                    messages.ERROR
+                )
+                return None
+        
+        # Get all active drivers
+        drivers = User.objects.filter(
+            driver_profile__is_active=True,
+            user_type='DRIVER'
+        ).values_list('id', 'email')
+        
+        if not drivers:
+            self.message_user(
+                request,
+                "No active drivers found in the system.",
+                messages.ERROR
+            )
+            return None
+        
+        # Create the HTML for the driver selection form
+        driver_options = "\n".join(
+            f'<option value="{id}">{email}</option>'
+            for id, email in drivers
+        )
+        
+        # Return a custom admin action page
+        return format_html("""
+            <form action="" method="post">
+                <input type="hidden" name="action" value="assign_to_driver" />
+                <input type="hidden" name="_selected_action" value="{}" />
+                {}
+                <p>Select a driver to assign the selected shipments to:</p>
+                <select name="driver_id">
+                    {}
+                </select>
+                <input type="submit" value="Assign Driver" />
+            </form>
+        """,
+        ",".join(str(obj.pk) for obj in queryset),
+        request.POST.get('csrfmiddlewaretoken', ''),
+        driver_options
+        )
+    
+    def user_link(self, obj):
+        if obj.user:
+            try:
+                # Try to get the app label and model name from the user model
+                app_label = obj.user._meta.app_label
+                model_name = obj.user._meta.model_name
+                url = reverse(f"admin:{app_label}_{model_name}_change", args=[obj.user.id])
+                return format_html('<a href="{}">{}</a>', url, obj.user.email)
+            except:
+                # Fallback to just showing the email without a link
+                return obj.user.email
+        return "-"
+    user_link.short_description = 'User'
     
     def status_badge(self, obj):
         status_colors = {
@@ -292,13 +358,6 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             messages.SUCCESS
         )
     mark_payment_as_failed.short_description = "Mark payment as Failed"
-    
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        """Override to filter the staff dropdown to only show staff users"""
-        if db_field.name == "staff":
-            User = get_user_model()
-            kwargs["queryset"] = User.objects.filter(is_staff=True)
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 @admin.register(SupportTicket)

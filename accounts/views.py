@@ -11,13 +11,15 @@ from rest_framework import generics, permissions, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from accounts.models import Contact, UserCountry
+from accounts.models import Contact, Store, UserCountry
 from buy4me.models import Buy4MeRequest
 from shipping_rates.models import Country
 
-from .serializers import (ContactSerializer, UserCountrySerializer,
-                          UserCreateSerializer, UserSerializer)
+from .serializers import (ContactSerializer, StoreSerializer,
+                          UserCountrySerializer, UserCreateSerializer,
+                          UserSerializer)
 
 User = get_user_model()
 
@@ -315,3 +317,25 @@ class ContactView(generics.CreateAPIView):
         )
         email.attach_alternative(html_content, "text/html")
         email.send()
+        
+        
+        
+        
+class StoresView(APIView):
+
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request):
+        stores = Store.objects.filter(is_active=True)
+        serializer = StoreSerializer(stores, many=True)
+        return Response(serializer.data)
+    
+    
+
+class CheckStaffUserView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        if request.user.is_staff:
+            return Response({'is_staff': True})
+        return Response({'is_staff': False})

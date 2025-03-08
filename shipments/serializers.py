@@ -11,6 +11,8 @@ from .models import ShipmentRequest, ShipmentStatusLocation, SupportTicket
 
 class ShipmentRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField(read_only=True)
+    staff = serializers.StringRelatedField(read_only=True)
+    driver = serializers.StringRelatedField(read_only=True)
     cod_amount = serializers.DecimalField(read_only=True, max_digits=10, decimal_places=2)
     payment_method = serializers.ChoiceField(choices=ShipmentRequest.PaymentMethod.choices)
     payment_status = serializers.ChoiceField(choices=ShipmentRequest.PaymentStatus.choices)
@@ -19,7 +21,7 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
         model = ShipmentRequest
         fields = '__all__'
         read_only_fields = [
-            'user', 'tracking_number', 'status',
+            'user', 'staff', 'driver', 'tracking_number', 'status',
             'current_location', 'estimated_delivery',
             'tracking_history', 'base_rate', 'per_kg_rate',
             'weight_charge', 'total_additional_charges',

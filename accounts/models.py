@@ -1,4 +1,8 @@
+from decimal import Decimal
+
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -14,6 +18,7 @@ class User(AbstractUser):
     class UserType(models.TextChoices):
         WALK_IN = 'WALK_IN', _('Walk In')
         BUY4ME = 'BUY4ME', _('Buy4Me')
+        DRIVER = 'DRIVER', _('Driver')
         ADMIN = 'ADMIN', _('Admin')
         SUPER_ADMIN = 'SUPER_ADMIN', _('Super Admin')
     class Currency(models.TextChoices):
@@ -59,6 +64,7 @@ class User(AbstractUser):
 
 class Store(SixDigitIDMixin, models.Model):
     name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
     url = models.URLField(unique=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -118,4 +124,129 @@ class Contact(SixDigitIDMixin, models.Model):
     
     def __str__(self):
         return f"{self.name} - {self.subject}"
+    
+class DriverProfile(SixDigitIDMixin, models.Model):
+    """
+    Profile for drivers in the system
+    """
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='driver_profile',
+        help_text=_("User account associated with this driver profile")
+    )
+    vehicle_type = models.CharField(
+        max_length=50,
+        help_text=_("Type of vehicle used by the driver")
+    )
+    license_number = models.CharField(
+        max_length=50,
+        help_text=_("Driver's license number")
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text=_("Whether this driver is active and available for deliveries")
+    )
+    commission_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('10.00'),
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text=_("Commission rate as a percentage")
+    )
+    total_deliveries = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Total number of completed deliveries")
+    )
+    total_earnings = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Total earnings from all deliveries")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = _('Driver Profile')
+        verbose_name_plural = _('Driver Profiles')
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Driver: {self.user.email}"
+    
+    def update_stats(self):
+        """Update driver statistics"""
+        # Count completed shipments
+        from shipments.models import ShipmentRequest
+        completed_shipments = ShipmentRequest.objects.filter(
+            driver=self.user,
+            status=ShipmentRequest.Status.DELIVERED
+        ).count()
+        
+        # Count completed buy4me requests
+        from buy4me.models import Buy4MeRequest
+        completed_buy4me = Buy4MeRequest.objects.filter(
+            driver=self.user,
+            status=Buy4MeRequest.Status.COMPLETED
+        ).count()
+        
+        # Update total deliveries
+        self.total_deliveries = completed_shipments + completed_buy4me
+        self.save(update_fields=['total_deliveries', 'updated_at'])
+
+class DeliveryCommission(SixDigitIDMixin, models.Model):
+    """
+    Model for tracking individual delivery commissions for drivers
+    """
+    class DeliveryType(models.TextChoices):
+        SHIPMENT = 'SHIPMENT', _('Shipment')
+        BUY4ME = 'BUY4ME', _('Buy4Me')
+    
+    driver = models.ForeignKey(
+        DriverProfile,
+        on_delete=models.CASCADE,
+        related_name='commissions',
+        help_text=_("Driver who earned the commission")
+    )
+    delivery_type = models.CharField(
+        max_length=20,
+        choices=DeliveryType.choices,
+        help_text=_("Type of delivery")
+    )
+    reference_id = models.CharField(
+        max_length=50,
+        help_text=_("ID of the related shipment or buy4me request")
+    )
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text=_("Commission amount")
+    )
+    earned_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text=_("When the commission was earned")
+    )
+    description = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("Description of the commission")
+    )
+    
+    class Meta:
+        verbose_name = _('Delivery Commission')
+        verbose_name_plural = _('Delivery Commissions')
+        ordering = ['-earned_at']
+    
+    def __str__(self):
+        return f"{self.delivery_type} Commission: {self.amount} for {self.driver}"
+    
+    def save(self, *args, **kwargs):
+        is_new = not self.pk
+        super().save(*args, **kwargs)
+        
+        # Update driver total earnings if this is a new commission
+        if is_new:
+            self.driver.total_earnings += self.amount
+            self.driver.save(update_fields=['total_earnings', 'updated_at'])
     

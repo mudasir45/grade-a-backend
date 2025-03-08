@@ -2,7 +2,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from accounts.models import Contact, UserCountry
+from accounts.models import (Contact, DeliveryCommission, DriverProfile, Store,
+                             UserCountry)
 
 User = get_user_model()
 
@@ -56,4 +57,57 @@ class ContactSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         contact = Contact.objects.create(**validated_data)
         return contact
+
+class DriverProfileSerializer(serializers.ModelSerializer):
+    user_details = UserSerializer(source='user', read_only=True)
+    total_earnings = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    total_deliveries = serializers.IntegerField(read_only=True)
     
+    class Meta:
+        model = DriverProfile
+        fields = (
+            'id', 'user', 'user_details', 'vehicle_type', 'license_number',
+            'vehicle_plate', 'is_active', 'commission_rate', 'total_earnings',
+            'total_deliveries', 'created_at', 'updated_at'
+        )
+        read_only_fields = ('id', 'total_earnings', 'total_deliveries', 'created_at', 'updated_at')
+
+
+class DriverProfileCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DriverProfile
+        fields = (
+            'user', 'vehicle_type', 'license_number', 'vehicle_plate',
+            'is_active', 'commission_rate'
+        )
+    
+    def validate_user(self, value):
+        """Ensure the user is of type DRIVER"""
+        if value.user_type != 'DRIVER':
+            raise serializers.ValidationError("User must be of type DRIVER")
+        
+        # Check if driver profile already exists
+        if DriverProfile.objects.filter(user=value).exists():
+            raise serializers.ValidationError("Driver profile already exists for this user")
+        
+        return value
+
+
+class DeliveryCommissionSerializer(serializers.ModelSerializer):
+    driver_details = serializers.StringRelatedField(source='driver', read_only=True)
+    
+    class Meta:
+        model = DeliveryCommission
+        fields = (
+            'id', 'driver', 'driver_details', 'delivery_type', 'reference_id',
+            'amount', 'earned_at', 'description'
+        )
+        read_only_fields = ('id', 'earned_at')
+    
+
+class StoreSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Store
+        fields = "__all__"
+        
+

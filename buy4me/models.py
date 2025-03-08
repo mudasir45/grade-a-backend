@@ -1,8 +1,12 @@
-from django.db import models
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.validators import MinValueValidator
+from django.db import models
 from django.utils.translation import gettext_lazy as _
+
 from core.utils import SixDigitIDMixin
+
 
 class Buy4MeRequest(SixDigitIDMixin, models.Model):
     class Status(models.TextChoices):
@@ -27,6 +31,22 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
         on_delete=models.CASCADE,
         related_name='buy4me_requests'
     )
+    staff = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='assigned_buy4me_requests',
+        null=True,
+        blank=True,
+        help_text=_('Staff member assigned to handle this request')
+    )
+    driver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='driver_buy4me_requests',
+        null=True,
+        blank=True,
+        help_text=_('Driver assigned to deliver this request')
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -40,7 +60,7 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
     total_cost = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        default=0,
+        default=Decimal('0.00'),
         validators=[MinValueValidator(0)]
     )
     shipping_address = models.TextField()
