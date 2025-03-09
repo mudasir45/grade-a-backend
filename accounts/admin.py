@@ -67,14 +67,21 @@ class ContactAdmin(admin.ModelAdmin):
 class DriverProfileAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'vehicle_type', 'is_active', 'total_deliveries', 'total_earnings')
     list_filter = ('is_active', 'vehicle_type', 'created_at')
-    search_fields = ('user__username', 'user__email', 'license_number', 'vehicle_plate')
+    search_fields = ('user__username', 'user__email', 'license_number')
     readonly_fields = ('total_earnings', 'total_deliveries', 'created_at', 'updated_at')
-    fieldsets = (
-        (None, {'fields': ('user', 'is_active')}),
-        (_('Vehicle Information'), {'fields': ('vehicle_type', 'license_number', 'vehicle_plate')}),
-        (_('Commission Info'), {'fields': ('commission_rate', 'total_earnings', 'total_deliveries')}),
-        (_('Dates'), {'fields': ('created_at', 'updated_at')}),
+    
+    # Combine all fields into a single fieldset
+    fields = (
+        'user', 'is_active', 'vehicle_type', 'license_number', 
+        'commission_rate', 'total_earnings', 'total_deliveries',
+        'created_at', 'updated_at'
     )
+    
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        # Filter user selection to only show users with user_type='DRIVER'
+        if db_field.name == 'user':
+            kwargs['queryset'] = User.objects.filter(user_type='DRIVER')
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 @admin.register(DeliveryCommission)
 class DeliveryCommissionAdmin(admin.ModelAdmin):

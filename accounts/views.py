@@ -41,6 +41,19 @@ class UserViewSet(viewsets.ModelViewSet):
         if self.action == 'create':
             return UserCreateSerializer
         return UserSerializer
+    
+    def get_queryset(self):
+        """
+        Filter users based on query parameters.
+        """
+        queryset = User.objects.all()
+        
+        # Filter by user_type if provided
+        user_type = self.request.query_params.get('user_type', None)
+        if user_type:
+            queryset = queryset.filter(user_type=user_type)
+            
+        return queryset
 
     @extend_schema(
         summary="Get current user",
