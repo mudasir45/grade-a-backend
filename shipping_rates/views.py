@@ -1,19 +1,19 @@
-from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema
-from rest_framework.permissions import AllowAny
-from .models import (
-    Country, ShippingZone, ServiceType, WeightBasedRate,
-    DimensionalFactor, AdditionalCharge
-)
-from .serializers import (
-    CountrySerializer, ShippingZoneSerializer, ServiceTypeSerializer,
-    WeightBasedRateSerializer, DimensionalFactorSerializer,
-    AdditionalChargeSerializer, ShippingCalculatorSerializer
-)
-from rest_framework.views import APIView
 from decimal import Decimal
+
+from drf_spectacular.utils import extend_schema
+from rest_framework import permissions, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from .models import (AdditionalCharge, Country, DimensionalFactor, ServiceType,
+                     ShippingZone, WeightBasedRate)
+from .serializers import (AdditionalChargeSerializer, CountrySerializer,
+                          DimensionalFactorSerializer, ServiceTypeSerializer,
+                          ShippingCalculatorSerializer, ShippingZoneSerializer,
+                          WeightBasedRateSerializer)
+
 
 @extend_schema(tags=['shipping-rates'])
 class ShippingRateViewSet(viewsets.ModelViewSet):
@@ -163,7 +163,7 @@ class ServiceTypeViewSet(viewsets.ModelViewSet):
 
 @extend_schema(tags=['shipping-rates'])
 class ShippingRateCalculatorView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
     
     @extend_schema(
         summary="Calculate shipping rate",
