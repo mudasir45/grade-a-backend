@@ -67,7 +67,7 @@ class DriverProfileSerializer(serializers.ModelSerializer):
         model = DriverProfile
         fields = (
             'id', 'user', 'user_details', 'vehicle_type', 'license_number',
-            'vehicle_plate', 'is_active', 'commission_rate', 'total_earnings',
+            'is_active', 'commission_rate', 'total_earnings',
             'total_deliveries', 'created_at', 'updated_at'
         )
         read_only_fields = ('id', 'total_earnings', 'total_deliveries', 'created_at', 'updated_at')
@@ -77,7 +77,7 @@ class DriverProfileCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = DriverProfile
         fields = (
-            'user', 'vehicle_type', 'license_number', 'vehicle_plate',
+            'user', 'vehicle_type', 'license_number',
             'is_active', 'commission_rate'
         )
     

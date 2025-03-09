@@ -82,8 +82,11 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
         ('Assignment Information', {
             'fields': (
                 'user',
-                ('staff', 'driver')
-            )
+                'staff',
+                'driver'
+            ),
+            'classes': ('wide',),
+            'description': 'Manage user, staff, and driver assignments'
         }),
         ('Status Information', {
             'fields': (

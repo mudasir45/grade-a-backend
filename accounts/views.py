@@ -339,3 +339,14 @@ class CheckStaffUserView(APIView):
         if request.user.is_staff:
             return Response({'is_staff': True})
         return Response({'is_staff': False})
+
+
+class CheckDriverUserView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+
+    def get(self, request):
+        if request.user.is_staff and request.user.driver_profile and request.user.user_type == 'DRIVER':
+            return Response({'is_driver': True})
+        return Response({'is_driver': False})
+
