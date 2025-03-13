@@ -9,10 +9,11 @@ from django.utils.crypto import get_random_string
 from django.utils.translation import gettext_lazy as _
 from model_utils import FieldTracker
 
+from accounts.models import City, DriverProfile
 from core.utils import SixDigitIDMixin
 from shipping_rates.models import Country, ServiceType
 
-from .utils import generate_shipment_receipt
+from .utils import generate_shipment_receipt, generate_tracking_number
 
 
 def shipment_receipt_path(instance, filename):
@@ -64,7 +65,9 @@ class ShipmentStatusLocation(models.Model):
         unique_together = ['status_type', 'location_name']
     
     def __str__(self):
-        return f"{self.get_status_type_display()} - {self.location_name}"
+        # Get the display value for the status type using next() and a generator expression
+        status_display = next((value for key, value in self.StatusType.choices if key == self.status_type), self.status_type)
+        return f"{status_display} - {self.location_name}"
     
     @classmethod
     def get_status_mapping(cls):
@@ -128,6 +131,23 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         null=True,
         blank=True,
         help_text=_('Driver assigned to deliver this shipment')
+    )
+    
+    # City Information
+    city = models.ForeignKey(
+        City,
+        on_delete=models.SET_NULL,
+        related_name='shipments',
+        null=True,
+        blank=True,
+        help_text=_('City for delivery, determines delivery charge and assigned driver')
+    )
+    delivery_charge = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(0)],
+        help_text=_('Fixed delivery charge based on city')
     )
 
     # Payment Information
@@ -314,7 +334,7 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         return f"Shipment #{self.tracking_number or self.id} - {self.status}"
 
     def calculate_total_cost(self):
-        """Calculate total cost including COD charge if applicable"""
+        """Calculate total cost including delivery charge and COD charge if applicable"""
         subtotal = (
             self.base_rate + 
             self.weight_charge + 
@@ -325,27 +345,32 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         # Add 5% COD charge if payment method is COD
         if self.payment_method == self.PaymentMethod.COD:
             self.cod_amount = round(subtotal * Decimal('0.05'), 2)
-            return subtotal + self.cod_amount
+            return subtotal + self.cod_amount + self.delivery_charge
         
         self.cod_amount = Decimal('0')
-        return subtotal
+        return subtotal + self.delivery_charge
 
     def save(self, *args, **kwargs):
         is_new = not self.pk
         
+        # Generate tracking number if not set
         if not self.tracking_number:
-            # Generate unique tracking number
-            prefix = 'TRK'
-            random_digits = get_random_string(9, '0123456789')
-            self.tracking_number = f"{prefix}{random_digits}"
-            
-            # Add initial tracking entry
-            self.tracking_history.append({
-                'status': self.Status.PENDING,
-                'location': 'Order Received',
-                'timestamp': timezone.now().isoformat(),
-                'description': 'Shipment request created'
-            })
+            self.tracking_number = generate_tracking_number()
+        
+        # If city is set but driver is not, try to assign a driver
+        if self.city and not self.driver:
+            # Get active drivers assigned to this city
+            driver_profiles = DriverProfile.objects.filter(
+                cities=self.city,
+                is_active=True
+            )
+            driver_profile = driver_profiles.first()
+            if driver_profile:
+                self.driver = driver_profile.user
+        
+        # If city is set but delivery_charge is not, set it from the city
+        if self.city and self.delivery_charge == Decimal('0.00'):
+            self.delivery_charge = self.city.delivery_charge
         
         # Calculate total cost including COD charge if applicable
         self.weight_charge = self.weight * self.per_kg_rate

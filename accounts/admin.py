@@ -3,8 +3,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import (Contact, DeliveryCommission, DriverProfile, Store, User,
-                     UserCountry)
+from .models import (City, Contact, DeliveryCommission, DriverProfile, Store,
+                     User, UserCountry)
 
 
 @admin.register(User)
@@ -63,17 +63,29 @@ class ContactAdmin(admin.ModelAdmin):
     )
     ordering = ('-created_at',)
 
+@admin.register(City)
+class CityAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name', 'postal_code', 'delivery_charge', 'is_active')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'postal_code')
+    readonly_fields = ('created_at', 'updated_at')
+    fields = (
+        'name', 'postal_code', 'delivery_charge', 'is_active',
+        'created_at', 'updated_at'
+    )
+
 @admin.register(DriverProfile)
 class DriverProfileAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'vehicle_type', 'is_active', 'total_deliveries', 'total_earnings')
     list_filter = ('is_active', 'vehicle_type', 'created_at')
     search_fields = ('user__username', 'user__email', 'license_number')
     readonly_fields = ('total_earnings', 'total_deliveries', 'created_at', 'updated_at')
+    filter_horizontal = ('cities',)
     
     # Combine all fields into a single fieldset
     fields = (
         'user', 'is_active', 'vehicle_type', 'license_number', 
-        'commission_rate', 'total_earnings', 'total_deliveries',
+        'cities', 'total_earnings', 'total_deliveries',
         'created_at', 'updated_at'
     )
     

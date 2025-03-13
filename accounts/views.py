@@ -13,11 +13,11 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import Contact, Store, UserCountry
+from accounts.models import City, Contact, Store, UserCountry
 from buy4me.models import Buy4MeRequest
 from shipping_rates.models import Country
 
-from .serializers import (ContactSerializer, StoreSerializer,
+from .serializers import (CitySerializer, ContactSerializer, StoreSerializer,
                           UserCountrySerializer, UserCreateSerializer,
                           UserSerializer)
 
@@ -363,3 +363,10 @@ class CheckDriverUserView(APIView):
             return Response({'is_driver': True})
         return Response({'is_driver': False})
 
+class CitiesView(APIView):
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request):
+        cities = City.objects.filter(is_active=True)
+        serializer = CitySerializer(cities, many=True)
+        return Response(serializer.data)

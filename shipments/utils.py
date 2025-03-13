@@ -1,16 +1,21 @@
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch, mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
-from reportlab.graphics.shapes import Drawing
-from reportlab.graphics.barcode.qr import QrCodeWidget
-from reportlab.graphics import renderPDF
-from io import BytesIO
-from django.conf import settings
 import os
 from datetime import datetime
+from io import BytesIO
+
+from django.conf import settings
+from django.utils import timezone
+from django.utils.crypto import get_random_string
+from reportlab.graphics import renderPDF
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics.shapes import Drawing
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch, mm
+from reportlab.platypus import (Image, Paragraph, SimpleDocTemplate, Spacer,
+                                Table, TableStyle)
+
 
 def create_qr_code(data, size=40*mm):
     """Create a QR code for the tracking number."""
@@ -188,24 +193,44 @@ def generate_shipment_receipt(shipment):
     # Cost breakdown
     elements.append(Paragraph('COST BREAKDOWN', styles['SectionHeader']))
     
+    # Calculate subtotal (before COD and delivery charges)
+    subtotal = (
+        shipment.base_rate + 
+        shipment.weight_charge + 
+        shipment.service_charge +
+        shipment.total_additional_charges
+    )
+    
     cost_data = [
         ['Base Rate:', f"${shipment.base_rate:,.2f}"],
         ['Weight Charge:', f"${shipment.weight_charge:,.2f}"],
         ['Service Charge:', f"${shipment.service_charge:,.2f}"],
         ['Additional Charges:', f"${shipment.total_additional_charges:,.2f}"],
-        ['Total Cost:', f"${shipment.total_cost:,.2f}"]
+        ['Subtotal:', f"${subtotal:,.2f}"],
     ]
+    
+    # Add COD charge if applicable
+    if shipment.payment_method == 'COD' and shipment.cod_amount > 0:
+        cost_data.append(['COD Charge (5%):', f"${shipment.cod_amount:,.2f}"])
+    
+    # Add delivery charge
+    cost_data.append(['Delivery Charge:', f"${shipment.delivery_charge:,.2f}"])
+    
+    # Add total cost as the final row
+    cost_data.append(['Total Cost:', f"${shipment.total_cost:,.2f}"])
 
     cost_table = Table(cost_data, colWidths=[5.7*inch, 2*inch])
     cost_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -2), colors.HexColor('#f9f9f9')),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#1a237e')),
+        ('BACKGROUND', (0, 0), (-1, -3), colors.HexColor('#f9f9f9')),  # All rows except subtotal, delivery charge and total
+        ('BACKGROUND', (0, -3), (-1, -3), colors.HexColor('#f0f0f0')),  # Subtotal row
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#1a237e')),  # Total row
         ('TEXTCOLOR', (0, 0), (-1, -2), colors.HexColor('#424242')),
         ('TEXTCOLOR', (0, -1), (-1, -1), colors.white),
         ('ALIGN', (0, 0), (0, -1), 'LEFT'),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('FONTNAME', (0, 0), (-1, -2), 'Helvetica'),
-        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 0), (-1, -4), 'Helvetica'),  # Regular font for base items
+        ('FONTNAME', (0, -3), (-1, -2), 'Helvetica-Bold'),  # Bold for subtotal and delivery charge
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),  # Bold for total
         ('FONTSIZE', (0, 0), (-1, -1), 9),  # Reduced from 10
         ('TOPPADDING', (0, 0), (-1, -1), 6),  # Reduced from 8
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),  # Reduced from 8
@@ -238,3 +263,19 @@ def generate_shipment_receipt(shipment):
     buffer.close()
     
     return pdf 
+
+def generate_tracking_number():
+    """Generate a unique tracking number for shipments"""
+    prefix = 'TRK'
+    random_digits = get_random_string(9, '0123456789')
+    tracking_number = f"{prefix}{random_digits}"
+    
+    # Add initial tracking entry
+    tracking_history = [{
+        'status': 'PENDING',
+        'location': 'Order Received',
+        'timestamp': timezone.now().isoformat(),
+        'description': 'Shipment request created'
+    }]
+    
+    return tracking_number 

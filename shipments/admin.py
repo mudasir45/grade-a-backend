@@ -5,7 +5,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from accounts.models import DriverProfile, User
+from accounts.models import City, DriverProfile, User
 
 from .models import ShipmentRequest, ShipmentStatusLocation, SupportTicket
 
@@ -49,6 +49,24 @@ class DriverFilter(admin.SimpleListFilter):
         return queryset
 
 
+class CityFilter(admin.SimpleListFilter):
+    """Filter shipments by city"""
+    title = 'City'
+    parameter_name = 'city'
+    
+    def lookups(self, request, model_admin):
+        # Get all active cities
+        cities = City.objects.filter(is_active=True).values_list('id', 'name')
+        return [('none', 'No city')] + [(str(id), name) for id, name in cities]
+    
+    def queryset(self, request, queryset):
+        if self.value() == 'none':
+            return queryset.filter(city=None)
+        if self.value():
+            return queryset.filter(city_id=self.value())
+        return queryset
+
+
 @admin.register(ShipmentStatusLocation)
 class ShipmentStatusLocationAdmin(admin.ModelAdmin):
     """Admin interface for managing shipment status locations"""
@@ -66,22 +84,24 @@ class ShipmentStatusLocationAdmin(admin.ModelAdmin):
 class ShipmentRequestAdmin(admin.ModelAdmin):
     list_display = [
         'tracking_number', 'status_badge', 'payment_status_badge',
-        'user_link', 'staff_link', 'driver_link', 'sender_name', 'recipient_name',
-        'service_type', 'total_cost_display', 'receipt_download', 'created_at'
+        'user_link', 'staff_link', 'driver_link', 'city_link',
+        'sender_name', 'recipient_name',
+        'service_type', 'total_cost_display', 'delivery_charge_display', 'receipt_download', 'created_at'
     ]
     list_filter = [
         'status', 'payment_method', 'payment_status',
-        'service_type', 'created_at', StaffAssignmentFilter, DriverFilter
+        'service_type', 'created_at', StaffAssignmentFilter, DriverFilter, CityFilter
     ]
     search_fields = [
         'tracking_number', 'sender_name', 'recipient_name', 
         'current_location', 'user__email', 'staff__email',
-        'driver__email', 'transaction_id'
+        'driver__email', 'transaction_id', 'city__name'
     ]
     readonly_fields = [
         'tracking_number', 'tracking_history',
         'created_at', 'updated_at', 'receipt_download',
-        'cod_amount', 'total_cost'
+        'cod_amount', 'total_cost', 'delivery_charge', 'driver',
+        'cost_breakdown_display'
     ]
     
     actions = [
@@ -90,7 +110,8 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         'mark_payment_as_paid',
         'mark_payment_as_failed',
         'assign_to_driver',
-        'unassign_driver'
+        'unassign_driver',
+        'assign_to_city'
     ]
     
     fieldsets = (
@@ -98,10 +119,12 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             'fields': (
                 'user',
                 'staff',
-                'driver'
+                'driver',
+                'city',
+                
             ),
             'classes': ('wide',),
-            'description': 'Manage user, staff, and driver assignments'
+            'description': 'Manage user, staff, driver, and city assignments'
         }),
         ('Tracking Information', {
             'fields': (
@@ -141,10 +164,13 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         }),
         ('Cost Information', {
             'fields': (
-                'base_rate', 'per_kg_rate', 'weight_charge',
-                'service_charge', 'total_additional_charges',
+                'cost_breakdown_display',
+                ('base_rate', 'per_kg_rate', 'weight_charge'),
+                ('service_charge', 'total_additional_charges'),
+                'delivery_charge',
                 'total_cost'
-            )
+            ),
+            'description': 'Cost breakdown including base costs, delivery charge, and total'
         }),
         ('Additional Information', {
             'fields': ('notes',),
@@ -193,6 +219,13 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         return "-"
     driver_link.short_description = 'Driver'
     
+    def city_link(self, obj):
+        if obj.city:
+            url = reverse('admin:accounts_city_change', args=[obj.city.id])
+            return format_html('<a href="{}">{}</a>', url, obj.city.name)
+        return "-"
+    city_link.short_description = 'City'
+    
     def assign_to_me(self, request, queryset):
         """Assign selected shipments to the current user if they have staff status"""
         if not request.user.is_staff:
@@ -219,66 +252,13 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
     
     def assign_to_driver(self, request, queryset):
         """Action to assign selected shipments to a driver"""
-        if request.POST.get('driver_id'):
-            driver_id = request.POST.get('driver_id')
-            try:
-                driver = User.objects.get(
-                    id=driver_id,
-                    driver_profile__is_active=True,
-                    user_type='DRIVER'
-                )
-                updated = queryset.update(driver=driver)
-                self.message_user(
-                    request,
-                    f"{updated} shipments assigned to driver {driver.email}",
-                    messages.SUCCESS
-                )
-                return None
-            except User.DoesNotExist:
-                self.message_user(
-                    request,
-                    "Selected driver not found or is not active",
-                    messages.ERROR
-                )
-                return None
-        
-        # Get all active drivers
-        drivers = User.objects.filter(
-            driver_profile__is_active=True,
-            user_type='DRIVER'
-        ).values_list('id', 'email')
-        
-        if not drivers:
-            self.message_user(
-                request,
-                "No active drivers found in the system.",
-                messages.ERROR
-            )
-            return None
-        
-        # Create the HTML for the driver selection form
-        driver_options = "\n".join(
-            f'<option value="{id}">{email}</option>'
-            for id, email in drivers
+        self.message_user(
+            request,
+            "Drivers should be assigned automatically through city selection. "
+            "Please use the 'Assign to City' action instead.",
+            messages.WARNING
         )
-        
-        # Return a custom admin action page
-        return format_html("""
-            <form action="" method="post">
-                <input type="hidden" name="action" value="assign_to_driver" />
-                <input type="hidden" name="_selected_action" value="{}" />
-                {}
-                <p>Select a driver to assign the selected shipments to:</p>
-                <select name="driver_id">
-                    {}
-                </select>
-                <input type="submit" value="Assign Driver" />
-            </form>
-        """,
-        ",".join(str(obj.pk) for obj in queryset),
-        request.POST.get('csrfmiddlewaretoken', ''),
-        driver_options
-        )
+        return None
     
     def user_link(self, obj):
         if obj.user:
@@ -326,7 +306,38 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
     payment_status_badge.short_description = 'Payment'
     
     def total_cost_display(self, obj):
-        return f"${obj.total_cost}"
+        # Calculate subtotal
+        subtotal = (
+            obj.base_rate + 
+            obj.weight_charge + 
+            obj.service_charge +
+            obj.total_additional_charges
+        )
+        
+        # Build detailed breakdown
+        breakdown = f"""
+            Base Rate: ${obj.base_rate:.2f}<br>
+            Weight Charge: ${obj.weight_charge:.2f}<br>
+            Service Charge: ${obj.service_charge:.2f}<br>
+            Additional Charges: ${obj.total_additional_charges:.2f}<br>
+            <b>Subtotal: ${subtotal:.2f}</b><br>
+        """
+        
+        # Add COD charge if applicable
+        if obj.payment_method == 'COD' and obj.cod_amount > 0:
+            breakdown += f"COD Charge (5%): ${obj.cod_amount:.2f}<br>"
+            
+        # Add delivery charge
+        breakdown += f"<b>Delivery Charge: ${obj.delivery_charge:.2f}</b><br>"
+        
+        # Add total
+        breakdown += f"<b>Total: ${obj.total_cost:.2f}</b>"
+        
+        return format_html(
+            '<span title="{}" data-toggle="tooltip" data-html="true">${}</span>',
+            breakdown,
+            obj.total_cost
+        )
     total_cost_display.short_description = 'Total Cost'
     
     def receipt_download(self, obj):
@@ -337,6 +348,10 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             )
         return "-"
     receipt_download.short_description = 'Receipt'
+    
+    def delivery_charge_display(self, obj):
+        return f"${obj.delivery_charge}"
+    delivery_charge_display.short_description = 'Delivery Charge'
     
     def mark_payment_as_paid(self, request, queryset):
         updated = queryset.update(
@@ -361,6 +376,200 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             messages.SUCCESS
         )
     mark_payment_as_failed.short_description = "Mark payment as Failed"
+    
+    def assign_to_city(self, request, queryset):
+        """Action to assign selected shipments to a city"""
+        if request.POST.get('city_id'):
+            city_id = request.POST.get('city_id')
+            try:
+                city = City.objects.get(id=city_id, is_active=True)
+                updated = queryset.update(
+                    city=city,
+                    delivery_charge=city.delivery_charge
+                )
+                
+                # For each updated shipment, try to assign a driver
+                for shipment in queryset:
+                    # Get active drivers assigned to this city
+                    driver_profiles = DriverProfile.objects.filter(
+                        cities=city,
+                        is_active=True
+                    )
+                    driver_profile = driver_profiles.first()
+                    if driver_profile:
+                        shipment.driver = driver_profile.user
+                        shipment.save(update_fields=['driver'])
+                
+                self.message_user(
+                    request,
+                    f"{updated} shipments assigned to city {city.name}",
+                    messages.SUCCESS
+                )
+                return None
+            except City.DoesNotExist:
+                self.message_user(
+                    request,
+                    "Selected city not found or is not active",
+                    messages.ERROR
+                )
+                return None
+        
+        # Get all active cities
+        cities = City.objects.filter(is_active=True).values_list('id', 'name')
+        
+        if not cities:
+            self.message_user(
+                request,
+                "No active cities found in the system.",
+                messages.ERROR
+            )
+            return None
+        
+        # Create the HTML for the city selection form
+        city_options = "\n".join(
+            f'<option value="{id}">{name}</option>'
+            for id, name in cities
+        )
+        
+        # Return a custom admin action page
+        return format_html("""
+            <form action="" method="post">
+                <input type="hidden" name="action" value="assign_to_city" />
+                <input type="hidden" name="_selected_action" value="{}" />
+                {}
+                <p>Select a city to assign the selected shipments to:</p>
+                <select name="city_id">
+                    {}
+                </select>
+                <input type="submit" value="Assign City" />
+            </form>
+        """,
+        ",".join(str(obj.pk) for obj in queryset),
+        request.POST.get('csrfmiddlewaretoken', ''),
+        city_options
+        )
+    
+    assign_to_city.short_description = "Assign selected shipments to city"
+
+    def cost_breakdown_display(self, obj):
+        """Display a formatted cost breakdown table"""
+        # Calculate subtotal
+        subtotal = (
+            obj.base_rate + 
+            obj.weight_charge + 
+            obj.service_charge +
+            obj.total_additional_charges
+        )
+        
+        # Build HTML table using a single string without f-strings
+        html = """
+        <style>
+            .cost-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 15px;
+                font-family: Arial, sans-serif;
+                border: 1px solid #e0e0e0;
+            }
+            .cost-table th, .cost-table td {
+                padding: 10px 12px;
+                text-align: left;
+                border-bottom: 1px solid #e0e0e0;
+            }
+            .cost-table th {
+                background-color: #f5f5f5;
+                font-weight: bold;
+                color: #333;
+                border-bottom: 2px solid #ddd;
+            }
+            .cost-table td:last-child {
+                text-align: right;
+                font-family: monospace;
+                font-size: 14px;
+            }
+            .cost-table .subtotal {
+                background-color: #f9f9f9;
+                font-weight: bold;
+            }
+            .cost-table .total {
+                background-color: #1a237e;
+                color: white;
+                font-weight: bold;
+            }
+            .cost-table .total td {
+                padding: 12px;
+            }
+            .cost-table tr:hover {
+                background-color: #f8f8f8;
+            }
+            .cost-table .total:hover {
+                background-color: #1a237e;
+            }
+        </style>
+        <table class="cost-table">
+            <tr>
+                <th style="width: 70%%">Cost Component</th>
+                <th style="width: 30%%">Amount</th>
+            </tr>
+            <tr>
+                <td>Base Rate</td>
+                <td>$%.2f</td>
+            </tr>
+            <tr>
+                <td>Weight Charge (%.2f kg × $%.2f = $%.2f)</td>
+                <td>$%.2f</td>
+            </tr>
+            <tr>
+                <td>Service Charge</td>
+                <td>$%.2f</td>
+            </tr>
+            <tr>
+                <td>Additional Charges</td>
+                <td>$%.2f</td>
+            </tr>
+            <tr class="subtotal">
+                <td>Subtotal</td>
+                <td>$%.2f</td>
+            </tr>
+        """
+        
+        # Format the main table
+        html = html % (
+            obj.base_rate,
+            obj.weight, obj.per_kg_rate, obj.weight_charge, obj.weight_charge,
+            obj.service_charge,
+            obj.total_additional_charges,
+            subtotal
+        )
+        
+        # Add COD charge if applicable
+        if obj.payment_method == 'COD' and obj.cod_amount > 0:
+            cod_html = """
+            <tr>
+                <td>COD Charge (5%%)</td>
+                <td>$%.2f</td>
+            </tr>
+            """
+            html += cod_html % obj.cod_amount
+        
+        # Add delivery charge and total
+        footer_html = """
+        <tr>
+            <td>Delivery Charge</td>
+            <td>$%.2f</td>
+        </tr>
+        <tr class="total">
+            <td>Total Cost</td>
+            <td>$%.2f</td>
+        </tr>
+        </table>
+        """
+        html += footer_html % (obj.delivery_charge, obj.total_cost)
+        
+        # Use mark_safe instead of format_html since we're already handling the formatting
+        from django.utils.safestring import mark_safe
+        return mark_safe(html)
+    cost_breakdown_display.short_description = 'Cost Breakdown'
 
 
 @admin.register(SupportTicket)

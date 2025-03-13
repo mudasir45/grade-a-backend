@@ -5,6 +5,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from accounts.models import City, DriverProfile
 from core.utils import SixDigitIDMixin
 
 
@@ -47,6 +48,21 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
         blank=True,
         help_text=_('Driver assigned to deliver this request')
     )
+    city = models.ForeignKey(
+        City,
+        on_delete=models.SET_NULL,
+        related_name='buy4me_requests',
+        null=True,
+        blank=True,
+        help_text=_('City for delivery, determines delivery charge and assigned driver')
+    )
+    delivery_charge = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(0)],
+        help_text=_('Fixed delivery charge based on city')
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -83,6 +99,24 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
         self.total_cost = items_total
         self.save(update_fields=['total_cost'])
         return self.total_cost
+
+    def save(self, *args, **kwargs):
+        # If city is set but driver is not, try to assign a driver
+        if self.city and not self.driver:
+            # Get active drivers assigned to this city
+            driver_profiles = DriverProfile.objects.filter(
+                cities=self.city,
+                is_active=True
+            )
+            driver_profile = driver_profiles.first()
+            if driver_profile:
+                self.driver = driver_profile.user
+        
+        # If city is set but delivery_charge is not, set it from the city
+        if self.city and self.delivery_charge == Decimal('0.00'):
+            self.delivery_charge = self.city.delivery_charge
+            
+        super().save(*args, **kwargs)
 
 class Buy4MeItem(SixDigitIDMixin, models.Model):
     buy4me_request = models.ForeignKey(

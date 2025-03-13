@@ -125,6 +125,43 @@ class Contact(SixDigitIDMixin, models.Model):
     def __str__(self):
         return f"{self.name} - {self.subject}"
     
+class City(SixDigitIDMixin, models.Model):
+    """
+    Model for cities with delivery charges
+    """
+    name = models.CharField(
+        max_length=100,
+        help_text=_("Name of the city")
+    )
+    postal_code = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text=_("Postal code (optional)")
+    )
+    delivery_charge = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        help_text=_("Fixed delivery charge for this city")
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text=_("Whether this city is active for deliveries")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = _('City')
+        verbose_name_plural = _('Cities')
+        ordering = ['name']
+        
+    def __str__(self):
+        if self.postal_code:
+            return f"{self.name} ({self.postal_code})"
+        return self.name
+
 class DriverProfile(SixDigitIDMixin, models.Model):
     """
     Profile for drivers in the system
@@ -147,12 +184,11 @@ class DriverProfile(SixDigitIDMixin, models.Model):
         default=True,
         help_text=_("Whether this driver is active and available for deliveries")
     )
-    commission_rate = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        default=Decimal('10.00'),
-        validators=[MinValueValidator(0), MaxValueValidator(100)],
-        help_text=_("Commission rate as a percentage")
+    cities = models.ManyToManyField(
+        City,
+        related_name='drivers',
+        blank=True,
+        help_text=_("Cities this driver is assigned to")
     )
     total_deliveries = models.PositiveIntegerField(
         default=0,
@@ -249,4 +285,5 @@ class DeliveryCommission(SixDigitIDMixin, models.Model):
         if is_new:
             self.driver.total_earnings += self.amount
             self.driver.save(update_fields=['total_earnings', 'updated_at'])
+    
     

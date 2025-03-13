@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from accounts.serializers import UserSerializer
+from accounts.serializers import CitySerializer, UserSerializer
 from shipping_rates.models import (Country, DimensionalFactor, ServiceType,
                                    ShippingZone, WeightBasedRate)
 
@@ -13,6 +13,7 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField(read_only=True)
     staff = serializers.StringRelatedField(read_only=True)
     driver = serializers.StringRelatedField(read_only=True)
+    city = CitySerializer(read_only=True)
     cod_amount = serializers.DecimalField(read_only=True, max_digits=10, decimal_places=2)
     payment_method = serializers.ChoiceField(choices=ShipmentRequest.PaymentMethod.choices)
     payment_status = serializers.ChoiceField(choices=ShipmentRequest.PaymentStatus.choices)
@@ -21,13 +22,13 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
         model = ShipmentRequest
         fields = '__all__'
         read_only_fields = [
-            'user', 'staff', 'driver', 'tracking_number', 'status',
+            'user', 'staff', 'driver', 'city', 'tracking_number', 'status',
             'current_location', 'estimated_delivery',
             'tracking_history', 'base_rate', 'per_kg_rate',
             'weight_charge', 'total_additional_charges',
             'total_cost', 'created_at', 'updated_at',
             'cod_amount', 'payment_status', 'payment_date',
-            'transaction_id'
+            'transaction_id', 'delivery_charge'
         ]
 
 
@@ -44,7 +45,7 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
             'sender_name', 'sender_email', 'sender_phone',
             'sender_address', 'sender_country',
             'recipient_name', 'recipient_email', 'recipient_phone',
-            'recipient_address', 'recipient_country',
+            'recipient_address', 'recipient_country', 'city',
             'package_type', 'weight', 'length', 'width', 'height',
             'description', 'declared_value',
             'service_type', 'insurance_required', 'signature_required',
@@ -123,7 +124,12 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
                 )
                 total_additional += amount
             
-            # 7. Calculate subtotal
+            # 7. Get city delivery charge if city is provided
+            delivery_charge = Decimal('0.00')
+            if 'city' in data and data['city']:
+                delivery_charge = data['city'].delivery_charge
+            
+            # 8. Calculate subtotal
             subtotal = (
                 base_cost + 
                 weight_charge + 
@@ -131,13 +137,13 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
                 total_additional
             )
             
-            # 8. Add COD charge if applicable
+            # 9. Add COD charge if applicable
             cod_amount = Decimal('0')
             if data.get('payment_method') == ShipmentRequest.PaymentMethod.COD:
                 cod_amount = round(subtotal * Decimal('0.05'), 2)
             
-            # 9. Calculate final total
-            total_cost = subtotal + cod_amount
+            # 10. Calculate final total (including delivery charge)
+            total_cost = subtotal + cod_amount + delivery_charge
             
             return {
                 'base_rate': base_cost,
@@ -145,6 +151,7 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
                 'weight_charge': weight_charge,
                 'service_charge': service_charge,
                 'total_additional_charges': total_additional,
+                'delivery_charge': delivery_charge,
                 'cod_amount': cod_amount,
                 'total_cost': total_cost
             }

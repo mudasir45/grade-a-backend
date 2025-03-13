@@ -30,4 +30,5 @@ urlpatterns = [
     path('stores/', views.StoresView.as_view(), name='stores'),
     path('check-staff-user/', views.CheckStaffUserView.as_view(), name='check-staff-user'),
     path('check-driver-user/', views.CheckDriverUserView.as_view(), name='check-driver-user'),
+    path('cities/', views.CitiesView.as_view(), name='cities'),
 ] 

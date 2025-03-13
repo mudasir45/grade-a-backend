@@ -273,8 +273,8 @@ class DriverShipmentStatusUpdateView(APIView):
             try:
                 driver_profile = DriverProfile.objects.get(user=request.user)
                 
-                # Calculate commission based on shipment value and commission rate
-                commission_amount = (shipment.total_cost * driver_profile.commission_rate) / Decimal('100.00')
+                # Use the fixed delivery charge as the commission amount
+                commission_amount = shipment.delivery_charge
                 
                 # Create the commission record
                 DeliveryCommission.objects.create(
@@ -379,8 +379,8 @@ class DriverBuy4MeStatusUpdateView(APIView):
             try:
                 driver_profile = DriverProfile.objects.get(user=request.user)
                 
-                # Calculate commission based on request value and commission rate
-                commission_amount = (buy4me_request.total_cost * driver_profile.commission_rate) / Decimal('100.00')
+                # Use the fixed delivery charge as the commission amount
+                commission_amount = buy4me_request.delivery_charge
                 
                 # Create the commission record
                 DeliveryCommission.objects.create(

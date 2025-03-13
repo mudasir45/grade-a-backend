@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from accounts.serializers import CitySerializer
+
 from .models import Buy4MeItem, Buy4MeRequest
 
 
@@ -24,14 +26,18 @@ class Buy4MeRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField(read_only=True)
     staff = serializers.StringRelatedField(read_only=True)
     driver = serializers.StringRelatedField(read_only=True)
+    city = CitySerializer(read_only=True)
     
     class Meta:
         model = Buy4MeRequest
         fields = [
-            'id', 'user', 'staff', 'driver', 'status', 'total_cost', 
-            'shipping_address', 'notes', 'items', 'created_at', 'updated_at'
+            'id', 'user', 'staff', 'driver', 'city', 'status', 'total_cost', 
+            'delivery_charge', 'shipping_address', 'notes', 'items', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'user', 'staff', 'driver', 'total_cost', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'user', 'staff', 'driver', 'city', 'total_cost', 
+            'delivery_charge', 'created_at', 'updated_at'
+        ]
 
 class Buy4MeRequestCreateSerializer(serializers.ModelSerializer):
     class Meta:

@@ -2,8 +2,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from accounts.models import (Contact, DeliveryCommission, DriverProfile, Store,
-                             UserCountry)
+from accounts.models import (City, Contact, DeliveryCommission, DriverProfile,
+                             Store, UserCountry)
 
 User = get_user_model()
 
@@ -58,27 +58,40 @@ class ContactSerializer(serializers.ModelSerializer):
         contact = Contact.objects.create(**validated_data)
         return contact
 
+class CitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = City
+        fields = ('id', 'name', 'postal_code', 'delivery_charge', 'is_active')
+
+
 class DriverProfileSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
     total_earnings = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     total_deliveries = serializers.IntegerField(read_only=True)
+    cities = CitySerializer(many=True, read_only=True)
     
     class Meta:
         model = DriverProfile
         fields = (
             'id', 'user', 'user_details', 'vehicle_type', 'license_number',
-            'is_active', 'commission_rate', 'total_earnings',
+            'is_active', 'cities', 'total_earnings',
             'total_deliveries', 'created_at', 'updated_at'
         )
         read_only_fields = ('id', 'total_earnings', 'total_deliveries', 'created_at', 'updated_at')
 
 
 class DriverProfileCreateSerializer(serializers.ModelSerializer):
+    cities = serializers.PrimaryKeyRelatedField(
+        queryset=City.objects.filter(is_active=True),
+        many=True,
+        required=False
+    )
+    
     class Meta:
         model = DriverProfile
         fields = (
             'user', 'vehicle_type', 'license_number',
-            'is_active', 'commission_rate'
+            'is_active', 'cities'
         )
     
     def validate_user(self, value):
