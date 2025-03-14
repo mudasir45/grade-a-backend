@@ -2,7 +2,7 @@ import re
 from decimal import Decimal
 
 from django.conf import settings
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager
 from django.core.validators import (MaxValueValidator, MinValueValidator,
                                     RegexValidator)
 from django.db import models
@@ -18,12 +18,50 @@ def generate_unique_id(prefix):
     import uuid
     return f"{prefix}{uuid.uuid4().hex[:9].upper()}"
 
+class CustomUserManager(UserManager):
+    """
+    Custom user manager that automatically sets username to phone_number if not provided.
+    """
+    def _create_user(self, username, email, password, **extra_fields):
+        """
+        Create and save a user with the given username, email, and password.
+        """
+        if not username:
+            if not extra_fields.get('phone_number'):
+                raise ValueError('The phone_number field must be set')
+            username = extra_fields.get('phone_number')
+            
+        email = self.normalize_email(email) if email else None
+        username = self.model.normalize_username(username)
+        user = self.model(username=username, email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+    
+    def create_user(self, username=None, email=None, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', False)
+        extra_fields.setdefault('is_superuser', False)
+        return self._create_user(username, email, password, **extra_fields)
+    
+    def create_superuser(self, username=None, email=None, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('user_type', 'SUPER_ADMIN')
+        
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
+            
+        return self._create_user(username, email, password, **extra_fields)
+
 class User(AbstractUser):
     """
     Custom user model that extends Django's AbstractUser.
     The phone_number field is used as the primary identifier.
     """
     id = models.CharField(primary_key=True, max_length=12, editable=False)
+    email = models.EmailField(_('email address'), blank=True, null=True)
     
     class UserType(models.TextChoices):
         WALK_IN = 'WALK_IN', _('Walk In')
@@ -71,6 +109,9 @@ class User(AbstractUser):
     preferred_currency = models.CharField(max_length=10, choices=Currency.choices, blank=True, default='USD')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Use the custom manager
+    objects = CustomUserManager()
 
     # Set phone_number as the primary login field
     USERNAME_FIELD = 'phone_number'
