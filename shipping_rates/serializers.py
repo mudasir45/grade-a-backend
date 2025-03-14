@@ -1,8 +1,8 @@
 from rest_framework import serializers
-from .models import (
-    Country, ShippingZone, ServiceType, WeightBasedRate,
-    DimensionalFactor, AdditionalCharge
-)
+
+from .models import (AdditionalCharge, Country, DimensionalFactor, Extras,
+                     ServiceType, ShippingZone, WeightBasedRate)
+
 
 class CountrySerializer(serializers.ModelSerializer):
     class Meta:
@@ -121,3 +121,9 @@ class ShippingCalculatorSerializer(serializers.Serializer):
             raise serializers.ValidationError({"service_type": "Invalid service type id"})
         
         return data 
+    
+class ExtrasSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Extras
+        fields = ['id', 'name', 'description', 'price', 'is_active']
+

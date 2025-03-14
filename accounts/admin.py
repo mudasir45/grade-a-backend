@@ -1,34 +1,114 @@
 # Register your models here.
+import re
+
+from django import forms
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 from django.utils.translation import gettext_lazy as _
 
 from .models import (City, Contact, DeliveryCommission, DriverProfile, Store,
                      User, UserCountry)
 
 
+class CustomUserCreationForm(UserCreationForm):
+    """
+    A form that creates a user with phone number as the primary identifier.
+    """
+    phone_number = forms.CharField(
+        label=_("Phone number"),
+        required=True,
+        help_text=_("Required. Enter a valid phone number (digits only)."),
+    )
+    email = forms.EmailField(
+        label=_("Email address"),
+        required=False,
+        help_text=_("Optional. Enter a valid email address."),
+    )
+    
+    class Meta:
+        model = User
+        fields = ("phone_number", "email")
+    
+    def clean_phone_number(self):
+        """
+        Validate that the phone number contains only digits and is unique.
+        """
+        phone_number = self.cleaned_data.get('phone_number')
+        
+        # Check if phone number contains only digits
+        if not re.match(r'^\d+$', phone_number):
+            raise forms.ValidationError(_("Phone number must contain only digits."))
+            
+        # Check if phone number is unique
+        if User.objects.filter(phone_number=phone_number).exists():
+            raise forms.ValidationError(_("A user with this phone number already exists."))
+            
+        return phone_number
+    
+    def save(self, commit=True):
+        """
+        Save the user and set the username to be the same as the phone number.
+        """
+        user = super().save(commit=False)
+        user.username = self.cleaned_data.get('phone_number')
+        if commit:
+            user.save()
+        return user
+
+
+class CustomUserChangeForm(UserChangeForm):
+    """
+    A form for updating users with phone number as the primary identifier.
+    """
+    class Meta:
+        model = User
+        fields = '__all__'
+    
+    def clean_phone_number(self):
+        """
+        Validate that the phone number contains only digits.
+        """
+        phone_number = self.cleaned_data.get('phone_number')
+        
+        if phone_number:
+            # Check if phone number contains only digits
+            if not re.match(r'^\d+$', phone_number):
+                raise forms.ValidationError(_("Phone number must contain only digits."))
+                
+            # Check if phone number is unique (excluding the current user)
+            if User.objects.exclude(pk=self.instance.pk).filter(phone_number=phone_number).exists():
+                raise forms.ValidationError(_("A user with this phone number already exists."))
+                
+        return phone_number
+
+
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ('id', 'username', 'user_type', 'is_active', 'is_staff', 'date_joined')
+    form = CustomUserChangeForm
+    add_form = CustomUserCreationForm
+    
+    list_display = ('id', 'phone_number', 'email', 'first_name', 'last_name', 'user_type', 'is_active', 'is_staff', 'date_joined')
     list_filter = ('user_type', 'is_active', 'is_staff', 'is_verified')
-    search_fields = ('email', 'username', 'first_name', 'last_name')
+    search_fields = ('phone_number', 'email', 'first_name', 'last_name')
     ordering = ('-date_joined',)
     
     fieldsets = (
-        (None, {'fields': ('email', 'password')}),
-        (_('Personal info'), {'fields': ('first_name', 'last_name', 'phone_number', 'address', 'country', 'default_shipping_method', 'preferred_currency')}),
+        (None, {'fields': ('phone_number', 'email', 'password')}),
+        (_('Personal info'), {'fields': ('first_name', 'last_name', 'address', 'country', 'default_shipping_method', 'preferred_currency')}),
         (_('Permissions'), {
             'fields': ('user_type', 'is_active', 'is_staff', 'is_superuser', 'is_verified', 'groups', 'user_permissions'),
         }),
         (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
+        (_('Advanced options'), {'fields': ('username',), 'classes': ('collapse',)}),
     )
     
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'username', 'password1', 'password2'),
+            'fields': ('phone_number', 'email', 'password1', 'password2'),
         }),
-    ) 
+    )
     
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):

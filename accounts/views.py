@@ -12,16 +12,28 @@ from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from accounts.models import City, Contact, Store, UserCountry
 from buy4me.models import Buy4MeRequest
 from shipping_rates.models import Country
 
-from .serializers import (CitySerializer, ContactSerializer, StoreSerializer,
+from .serializers import (CitySerializer, ContactSerializer,
+                          PhoneTokenObtainPairSerializer, StoreSerializer,
                           UserCountrySerializer, UserCreateSerializer,
                           UserSerializer)
 
 User = get_user_model()
+
+
+
+@extend_schema(tags=['auth'])
+class PhoneTokenObtainPairView(TokenObtainPairView):
+    """
+    Takes a set of user credentials (phone_number and password) and returns an access
+    and refresh JSON web token pair to prove the authentication of those credentials.
+    """
+    serializer_class = PhoneTokenObtainPairSerializer
 
 class PasswordUpdateSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
@@ -237,13 +249,43 @@ class UserViewSet(viewsets.ModelViewSet):
     
 # create the singup view 
 
-@extend_schema(tags=['users'])
+@extend_schema(
+    tags=['users'],
+    summary="Register a new user",
+    description="Create a new user account with phone number as the primary identifier. Username is automatically set to the phone number. Email is optional.",
+    responses={
+        201: UserSerializer,
+        400: inline_serializer(
+            name='SignupError',
+            fields={
+                'error': serializers.CharField(),
+                'phone_number': serializers.ListField(child=serializers.CharField(), required=False),
+                'email': serializers.ListField(child=serializers.CharField(), required=False),
+            }
+        )
+    }
+)
 class SignUpView(generics.CreateAPIView):
     serializer_class = UserCreateSerializer
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
+        """Create a new user account with phone number authentication"""
         return super().post(request, *args, **kwargs)
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        
+        # Return the user data along with a success message
+        return Response(
+            {
+                "message": "User registered successfully. You can now log in with your phone number and password.",
+                "user": UserSerializer(user).data
+            },
+            status=status.HTTP_201_CREATED
+        )
     
 # endpoint that  returns the list of all usercountires 
 @extend_schema(tags=['users'])

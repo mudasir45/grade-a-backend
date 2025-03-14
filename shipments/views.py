@@ -283,10 +283,14 @@ class LastShipmentView(APIView):
             print("shipment", shipment)
 
             if not shipment:
-                return Response(
-                    {'message': 'No shipments found for this user'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
+                user = User.objects.get(id=user_id)
+                response = {
+                    "sender_name": user.first_name + " " + user.last_name,
+                    "sender_email": user.email,
+                    "sender_phone": user.phone_number,
+                    "sender_address": user.address,
+                }
+                return Response(response)
             
             serializer = ShipmentRequestSerializer(shipment)
             return Response(serializer.data)

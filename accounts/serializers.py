@@ -1,4 +1,6 @@
-from django.contrib.auth import get_user_model
+import re
+
+from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
@@ -7,6 +9,50 @@ from accounts.models import (City, Contact, DeliveryCommission, DriverProfile,
 
 User = get_user_model()
 
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+
+class PhoneTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Custom token serializer that uses phone_number for authentication instead of username.
+    """
+    phone_number = serializers.CharField(required=True)
+    password = serializers.CharField(required=True, write_only=True)
+    
+    def validate_phone_number(self, value):
+        """Validate that the phone number contains only digits"""
+        if not re.match(r'^\d+$', value):
+            raise serializers.ValidationError("Phone number must contain only digits.")
+        return value
+    
+    def validate(self, attrs):
+        # The authenticate call simply passes the phone_number as username
+        authenticate_kwargs = {
+            'phone_number': attrs.get('phone_number'),
+            'password': attrs.get('password')
+        }
+        
+        try:
+            authenticate_kwargs['request'] = self.context['request']
+        except KeyError:
+            pass
+        
+        # Authenticate the user
+        user = authenticate(**authenticate_kwargs)
+        
+        if not user:
+            raise serializers.ValidationError('No active account found with the given credentials')
+        
+        # Get the token
+        refresh = self.get_token(user)
+        
+        data = {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'user': UserSerializer(user).data
+        }
+        
+        return data
 
 class UserCountrySerializer(serializers.ModelSerializer):
     class Meta:
@@ -30,6 +76,9 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    phone_number = serializers.CharField(required=True)
+    username = serializers.CharField(required=False)
+    email = serializers.EmailField(required=False)
     
     class Meta:
         model = User
@@ -38,8 +87,24 @@ class UserCreateSerializer(serializers.ModelSerializer):
             'phone_number', 'address', 'user_type', 'country', 'preferred_currency'
         )
     
+    def validate_phone_number(self, value):
+        """Validate that the phone number is unique and contains only digits"""
+        # Check if phone number contains only digits
+        if not re.match(r'^\d+$', value):
+            raise serializers.ValidationError("Phone number must contain only digits.")
+            
+        # Check if phone number is unique
+        if User.objects.filter(phone_number=value).exists():
+            raise serializers.ValidationError("A user with this phone number already exists.")
+        return value
+    
     def create(self, validated_data):
         password = validated_data.pop('password')
+        
+        # If username is not provided, use phone number as username
+        if 'username' not in validated_data or not validated_data['username']:
+            validated_data['username'] = validated_data['phone_number']
+            
         user = User(**validated_data)
         user.set_password(password)
         user.save()

@@ -1,17 +1,27 @@
+import re
 from decimal import Decimal
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import (MaxValueValidator, MinValueValidator,
+                                    RegexValidator)
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from core.utils import SixDigitIDMixin, generate_unique_id
 
+# your_app/models.py
+
+# Assume you have an implementation for generate_unique_id
+def generate_unique_id(prefix):
+    # Your implementation for generating a unique id, e.g. using uuid
+    import uuid
+    return f"{prefix}{uuid.uuid4().hex[:9].upper()}"
 
 class User(AbstractUser):
     """
-    Custom user model that extends Django's AbstractUser
+    Custom user model that extends Django's AbstractUser.
+    The phone_number field is used as the primary identifier.
     """
     id = models.CharField(primary_key=True, max_length=12, editable=False)
     
@@ -21,6 +31,7 @@ class User(AbstractUser):
         DRIVER = 'DRIVER', _('Driver')
         ADMIN = 'ADMIN', _('Admin')
         SUPER_ADMIN = 'SUPER_ADMIN', _('Super Admin')
+        
     class Currency(models.TextChoices):
         USD = 'USD', _('USD')
         EUR = 'EUR', _('EUR')
@@ -28,14 +39,25 @@ class User(AbstractUser):
         CAD = 'CAD', _('CAD')
         AUD = 'AUD', _('AUD')
         
-        
-
     user_type = models.CharField(
         max_length=20,
         choices=UserType.choices,
         default=UserType.WALK_IN
     )
-    phone_number = models.CharField(max_length=15, blank=True)
+    phone_number = models.CharField(
+        max_length=15,
+        blank=True,
+        null=True,
+        unique=True,
+        validators=[
+            RegexValidator(
+                regex=r'^\d+$',
+                message='Phone number must contain only digits.',
+                code='invalid_phone_number'
+            )
+        ],
+        help_text=_("Phone number (digits only)")
+    )
     address = models.TextField(blank=True)
     is_verified = models.BooleanField(default=False)
     country = models.ForeignKey('UserCountry', on_delete=models.SET_NULL, null=True, blank=True)
@@ -50,17 +72,30 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Set phone_number as the primary login field
+    USERNAME_FIELD = 'phone_number'
+    # No required fields other than the USERNAME_FIELD
+    REQUIRED_FIELDS = []
+
     class Meta:
         verbose_name = _('User')
         verbose_name_plural = _('Users')
 
     def __str__(self):
+        if self.phone_number:
+            return self.phone_number
         return self.username
 
     def save(self, *args, **kwargs):
         if not self.id:
             self.id = generate_unique_id('USR')
-        super().save(*args, **kwargs) 
+        
+        # If phone number is provided but username is not, set username to phone number
+        if self.phone_number and not self.username:
+            self.username = self.phone_number
+            
+        super().save(*args, **kwargs)
+
 
 class Store(SixDigitIDMixin, models.Model):
     name = models.CharField(max_length=100)
