@@ -391,7 +391,7 @@ class CheckStaffUserView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def get(self, request):
-        if request.user.is_staff:
+        if request.user.is_staff and request.user.user_type == 'ADMIN':
             return Response({'is_staff': True})
         return Response({'is_staff': False})
 
