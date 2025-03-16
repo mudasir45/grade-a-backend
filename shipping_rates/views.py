@@ -7,12 +7,14 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import (AdditionalCharge, Country, DimensionalFactor, ServiceType,
-                     ShippingZone, WeightBasedRate)
+from accounts.models import City
+
+from .models import (AdditionalCharge, Country, DimensionalFactor, Extras,
+                     ServiceType, ShippingZone, WeightBasedRate)
 from .serializers import (AdditionalChargeSerializer, CountrySerializer,
-                          DimensionalFactorSerializer, ServiceTypeSerializer,
-                          ShippingCalculatorSerializer, ShippingZoneSerializer,
-                          WeightBasedRateSerializer)
+                          DimensionalFactorSerializer, ExtrasSerializer,
+                          ServiceTypeSerializer, ShippingCalculatorSerializer,
+                          ShippingZoneSerializer, WeightBasedRateSerializer)
 
 
 @extend_schema(tags=['shipping-rates'])
@@ -20,7 +22,7 @@ class ShippingRateViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAdminUser]
     
     @extend_schema(
-        summary="Calculate shipping rate",
+        summary="Calculate shipping rate (not used)",
         request=ShippingCalculatorSerializer,
     )
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
@@ -84,7 +86,7 @@ class ShippingRateViewSet(viewsets.ModelViewSet):
                             chargeable_weight = max(data['weight'], vol_weight)
                         
                         # Calculate base cost
-                        base_cost = rate.base_rate + (chargeable_weight * rate.per_kg_rate)
+                        base_cost = rate.regulation_charge + (chargeable_weight * rate.per_kg_rate)
                         
                         # Get additional charges
                         additional_charges = AdditionalCharge.objects.filter(
@@ -268,7 +270,7 @@ class ShippingRateCalculatorView(APIView):
                 })
             
             # 5. Calculate base cost
-            base_cost = rate.base_rate + (chargeable_weight * rate.per_kg_rate)
+            base_cost = rate.regulation_charge + (chargeable_weight * rate.per_kg_rate)
             
             # 6. Add service type price
             service_price = service_type.price
@@ -297,6 +299,23 @@ class ShippingRateCalculatorView(APIView):
             
             # 8. Calculate total cost
             total_cost = base_cost + service_price + total_additional
+            city = City.objects.get(
+                id=data['city'],
+                is_active=True
+            )             
+            total_cost += city.delivery_charge
+            
+            if request.data.get('additional_charges'):
+                extras = request.data.get('additional_charges')
+                for charge in extras:
+                    if (charge.get('charge_type') == 'FIXED'):
+                        print("Charge fixed: ", charge.get('value'))
+                        total_cost += Decimal(charge.get('value'))
+                
+                for charge in extras:
+                    if (charge.get('charge_type') == 'PERCENTAGE'):
+                        print("Charge percentage: ", charge.get('value'))
+                        total_cost += (total_cost * Decimal(charge.get('value')) / 100)
             
             # 9. Prepare detailed response
             response_data = {
@@ -324,10 +343,12 @@ class ShippingRateCalculatorView(APIView):
                 },
                 'weight_calculation': volumetric_details,
                 'rate_details': {
-                    'base_rate': float(rate.base_rate),
+                    'base_rate': float(rate.regulation_charge),
                     'per_kg_rate': float(rate.per_kg_rate),
                     'weight_charge': float(chargeable_weight * rate.per_kg_rate)
                 },
+                'city_delivery_charge': float(city.delivery_charge),
+                'extras': extras,
                 'cost_breakdown': {
                     'base_cost': float(base_cost),
                     'service_price': float(service_price),
@@ -346,3 +367,9 @@ class ShippingRateCalculatorView(APIView):
             )
     
     
+class ExtrasView(APIView):
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        extras = Extras.objects.all()
+        serializer = ExtrasSerializer(extras, many=True)
+        return Response(serializer.data)

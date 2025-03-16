@@ -94,7 +94,7 @@ class WeightBasedRate(SixDigitIDMixin, models.Model):
         decimal_places=2,
         validators=[MinValueValidator(0)]
     )
-    base_rate = models.DecimalField(
+    regulation_charge = models.DecimalField(
         max_digits=10, 
         decimal_places=2,
         validators=[MinValueValidator(0)]
@@ -163,10 +163,24 @@ class AdditionalCharge(SixDigitIDMixin, models.Model):
         return self.name 
 
 class Extras(SixDigitIDMixin, models.Model):
+    class ChargeType(models.TextChoices):
+        FIXED = 'FIXED', _('Fixed Amount')
+        PERCENTAGE = 'PERCENTAGE', _('Percentage of Base Cost')
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    charge_type = models.CharField(
+        max_length=20,
+        choices=ChargeType.choices,
+        default=ChargeType.FIXED
+    )
+    value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)]
+    )
     is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.name

@@ -1,9 +1,9 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import (
-    Country, ShippingZone, ServiceType, WeightBasedRate,
-    DimensionalFactor, AdditionalCharge
-)
+
+from .models import (AdditionalCharge, Country, DimensionalFactor, Extras,
+                     ServiceType, ShippingZone, WeightBasedRate)
+
 
 @admin.register(Country)
 class CountryAdmin(admin.ModelAdmin):
@@ -60,7 +60,7 @@ class ServiceTypeAdmin(admin.ModelAdmin):
 class WeightBasedRateAdmin(admin.ModelAdmin):
     list_display = [
         'zone', 'service_type', 'weight_range', 
-        'base_rate_display', 'per_kg_rate_display', 'is_active'
+        'regulation_charge_display', 'per_kg_rate_display', 'is_active'
     ]
     list_filter = ['is_active', 'zone', 'service_type']
     search_fields = ['zone__name', 'service_type__name']
@@ -69,9 +69,9 @@ class WeightBasedRateAdmin(admin.ModelAdmin):
         return f"{obj.min_weight}kg - {obj.max_weight}kg"
     weight_range.short_description = 'Weight Range'
     
-    def base_rate_display(self, obj):
-        return format_html('<b>${}</b>', obj.base_rate)
-    base_rate_display.short_description = 'Base Rate'
+    def regulation_charge_display(self, obj):
+        return format_html('<b>${}</b>', obj.regulation_charge)
+    regulation_charge_display.short_description = 'Base Rate'
     
     def per_kg_rate_display(self, obj):
         return format_html('<b>${}/kg</b>', obj.per_kg_rate)
@@ -106,3 +106,13 @@ class AdditionalChargeAdmin(admin.ModelAdmin):
     def service_type_count(self, obj):
         return obj.service_types.count()
     service_type_count.short_description = 'Service Types'
+
+
+
+@admin.register(Extras)
+class CountryAdmin(admin.ModelAdmin):
+    list_display = ['name', 'charge_type', 'value', 'is_active', 'id']
+    list_filter = ['is_active']
+    readonly_fields = ['id']
+    search_fields = ['name', 'value', 'charge_type']
+    ordering = ['name']

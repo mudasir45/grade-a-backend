@@ -1,5 +1,6 @@
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+
 from . import views
 
 router = DefaultRouter()
@@ -13,4 +14,5 @@ app_name = 'shipping_rates'
 urlpatterns = [
     path('calculate/', views.ShippingRateCalculatorView.as_view(), name='calculate-rate'),
     path('', include(router.urls)),
+    path('extras', views.ExtrasView.as_view(), name="get-extras")
 ] 
