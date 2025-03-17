@@ -423,7 +423,7 @@ class StaffShipmentsView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            serializer = ShipmentRequestSerializer(queryset, many=True)
+            serializer = ShipmentRequestSerializer(queryset, many=True, )
             return Response(serializer.data)
             
         except Exception as e:
@@ -446,6 +446,7 @@ class StaffShipmentCreateView(APIView):
     )
     def post(self, request, user_id=None):
         """Create a new shipment request for a specific user"""
+        request.data['staff'] = request.user.id
         serializer = ShipmentCreateSerializer(data=request.data)
         try:
             user = User.objects.get(id=user_id)

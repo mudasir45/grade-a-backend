@@ -184,3 +184,15 @@ class Extras(SixDigitIDMixin, models.Model):
 
     def __str__(self):
         return self.name
+    
+    
+class Currency(models.Model):
+    code = models.CharField(max_length=10, unique=True)  # e.g., 'USD', 'EUR', 'MYR'
+    name = models.CharField(max_length=100)
+    conversion_rate = models.DecimalField(
+        max_digits=12, decimal_places=4,
+        help_text="Conversion rate relative to MYR (Malaysian Ringgit)"
+    )
+
+    def __str__(self):
+        return self.code

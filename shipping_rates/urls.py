@@ -14,5 +14,6 @@ app_name = 'shipping_rates'
 urlpatterns = [
     path('calculate/', views.ShippingRateCalculatorView.as_view(), name='calculate-rate'),
     path('', include(router.urls)),
-    path('extras', views.ExtrasView.as_view(), name="get-extras")
+    path('extras', views.ExtrasView.as_view(), name="get-extras"),
+    path('convert-currency/', views.CurrencyConversionAPIView.as_view(), name='convert-currency'),
 ] 

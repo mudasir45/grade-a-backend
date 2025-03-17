@@ -1,8 +1,8 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import (AdditionalCharge, Country, DimensionalFactor, Extras,
-                     ServiceType, ShippingZone, WeightBasedRate)
+from .models import (AdditionalCharge, Country, Currency, DimensionalFactor,
+                     Extras, ServiceType, ShippingZone, WeightBasedRate)
 
 
 @admin.register(Country)
@@ -116,3 +116,5 @@ class CountryAdmin(admin.ModelAdmin):
     readonly_fields = ['id']
     search_fields = ['name', 'value', 'charge_type']
     ordering = ['name']
+
+admin.site.register(Currency)

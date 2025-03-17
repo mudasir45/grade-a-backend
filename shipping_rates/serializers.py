@@ -94,7 +94,7 @@ class ShippingCalculatorSerializer(serializers.Serializer):
     )
     
     city = serializers.CharField(
-        required=True,
+        required=False,
         help_text="City"
     )
     def validate(self, data):
@@ -132,13 +132,13 @@ class ShippingCalculatorSerializer(serializers.Serializer):
         except ServiceType.DoesNotExist:
             raise serializers.ValidationError({"service_type": "Invalid service type id"})
         
-        try:
-            City.objects.get(
-                    id=data['city'],
-                    is_active=True
-                )
-        except City.DoesNotExist:
-            raise serializers.ValidationError({"city": "Invalid city id"})
+        # try:
+        #     City.objects.get(
+        #             id=data['city'],
+        #             is_active=True
+        #         )
+        # except City.DoesNotExist:
+        #     raise serializers.ValidationError({"city": "Invalid city id"})
         
         return data 
     
@@ -146,4 +146,10 @@ class ExtrasSerializer(serializers.ModelSerializer):
     class Meta:
         model = Extras
         fields = ['id', 'name', 'description', 'charge_type',  'value', 'is_active']
+
+
+class CurrencyConversionSerializer(serializers.Serializer):
+    from_currency = serializers.CharField(max_length=10)
+    from_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    to_currency = serializers.CharField(max_length=10)
 

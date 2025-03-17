@@ -405,6 +405,7 @@ class CheckDriverUserView(APIView):
             return Response({'is_driver': True})
         return Response({'is_driver': False})
 
+
 class CitiesView(APIView):
     permission_classes = [permissions.AllowAny]
     

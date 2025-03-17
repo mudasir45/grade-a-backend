@@ -44,7 +44,7 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
         fields = [
             'sender_name', 'sender_email', 'sender_phone',
             'sender_address', 'sender_country',
-            'recipient_name', 'recipient_email', 'recipient_phone',
+            'recipient_name', 'recipient_email', 'staff', 'recipient_phone',
             'recipient_address', 'recipient_country', 'city',
             'package_type', 'weight', 'length', 'width', 'height',
             'description', 'declared_value',
@@ -105,7 +105,7 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
                 )
             
             # 4. Calculate costs
-            base_cost = rate.base_rate
+            base_cost = rate.regulation_charge
             weight_charge = chargeable_weight * rate.per_kg_rate
             
             # 5. Get service charge from service type

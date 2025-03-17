@@ -9,9 +9,10 @@ from rest_framework.views import APIView
 
 from accounts.models import City
 
-from .models import (AdditionalCharge, Country, DimensionalFactor, Extras,
-                     ServiceType, ShippingZone, WeightBasedRate)
+from .models import (AdditionalCharge, Country, Currency, DimensionalFactor,
+                     Extras, ServiceType, ShippingZone, WeightBasedRate)
 from .serializers import (AdditionalChargeSerializer, CountrySerializer,
+                          CurrencyConversionSerializer,
                           DimensionalFactorSerializer, ExtrasSerializer,
                           ServiceTypeSerializer, ShippingCalculatorSerializer,
                           ShippingZoneSerializer, WeightBasedRateSerializer)
@@ -299,14 +300,18 @@ class ShippingRateCalculatorView(APIView):
             
             # 8. Calculate total cost
             total_cost = base_cost + service_price + total_additional
-            city = City.objects.get(
-                id=data['city'],
-                is_active=True
-            )             
-            total_cost += city.delivery_charge
             
-            if request.data.get('additional_charges'):
-                extras = request.data.get('additional_charges')
+            city_delivery_charges = 0
+            if request.data.get('city'):
+                city = City.objects.get(
+                    id=request.data.get('city'),
+                    is_active=True
+                )             
+                total_cost += city.delivery_charge
+                city_delivery_charges = city.delivery_charge
+            
+            extras = request.data.get('additional_charges')
+            if request.data.get('additional_charges'):                                                                                                                                                                                                                                                                                                                        
                 for charge in extras:
                     if (charge.get('charge_type') == 'FIXED'):
                         print("Charge fixed: ", charge.get('value'))
@@ -347,7 +352,7 @@ class ShippingRateCalculatorView(APIView):
                     'per_kg_rate': float(rate.per_kg_rate),
                     'weight_charge': float(chargeable_weight * rate.per_kg_rate)
                 },
-                'city_delivery_charge': float(city.delivery_charge),
+                'city_delivery_charge': float(city_delivery_charges),
                 'extras': extras,
                 'cost_breakdown': {
                     'base_cost': float(base_cost),
@@ -373,3 +378,39 @@ class ExtrasView(APIView):
         extras = Extras.objects.all()
         serializer = ExtrasSerializer(extras, many=True)
         return Response(serializer.data)
+
+class CurrencyConversionAPIView(APIView):
+    def post(self, request, format=None):
+        serializer = CurrencyConversionSerializer(data=request.data)
+        if serializer.is_valid():
+            from_currency_code = serializer.validated_data['from_currency'].upper()
+            to_currency_code = serializer.validated_data['to_currency'].upper()
+            from_amount = serializer.validated_data['from_amount']
+
+            # Check for existence of both currencies in the database
+            try:
+                from_currency = Currency.objects.get(code=from_currency_code)
+                to_currency = Currency.objects.get(code=to_currency_code)
+            except Currency.DoesNotExist:
+                return Response(
+                    {"error": "One or both of the specified currencies were not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Convert from the source currency to MYR, then MYR to the target currency.
+            # Calculation: (amount * from_currency.conversion_rate) / to_currency.conversion_rate
+            amount_in_myr = from_amount * from_currency.conversion_rate
+            converted_amount = amount_in_myr / to_currency.conversion_rate
+
+            return Response({
+                "from_currency": from_currency_code,
+                "to_currency": to_currency_code,
+                "from_amount": str(from_amount),
+                "converted_amount": str(round(converted_amount, 2))
+            }, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
