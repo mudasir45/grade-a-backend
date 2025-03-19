@@ -74,7 +74,7 @@ def generate_shipment_receipt(shipment):
     ))
 
     # Create QR code with tracking URL
-    tracking_url = f"https://grade-a-express.com/track?tracking_number={shipment.tracking_number}"
+    tracking_url = f"https://grade-a-express.com/tracking?tracking_number={shipment.tracking_number}"
     qr_code = create_qr_code(data=tracking_url, size=30*mm)  # Reduced from 40mm
 
     # Header with company info, receipt details, and QR code
