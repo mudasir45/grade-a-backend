@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from accounts.serializers import CitySerializer, UserSerializer
@@ -45,7 +46,7 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
             'sender_name', 'sender_email', 'sender_phone',
             'sender_address', 'sender_country',
             'recipient_name', 'recipient_email', 'staff', 'recipient_phone',
-            'recipient_address', 'recipient_country', 'city',
+            'recipient_address', 'recipient_country', 'city', 'extras',
             'package_type', 'weight', 'length', 'width', 'height',
             'description', 'declared_value',
             'service_type', 'insurance_required', 'signature_required',
@@ -113,16 +114,17 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
             
             # 6. Calculate additional charges
             total_additional = Decimal('0')
-            additional_charges = zone.additional_charges.filter(
-                service_types=data['service_type'],
-                is_active=True
-            )
-            for charge in additional_charges:
-                amount = (
-                    charge.value if charge.charge_type == 'FIXED'
-                    else (base_cost * charge.value / 100)
+            if hasattr(zone, 'additional_charges'):
+                additional_charges = zone.additional_charges.filter(
+                    service_types=data['service_type'],
+                    is_active=True
                 )
-                total_additional += amount
+                for charge in additional_charges:
+                    amount = (
+                        Decimal(str(charge.value)) if charge.charge_type == 'FIXED'
+                        else (base_cost * Decimal(str(charge.value)) / 100)
+                    )
+                    total_additional += amount
             
             # 7. Get city delivery charge if city is provided
             delivery_charge = Decimal('0.00')
@@ -144,6 +146,34 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
             
             # 10. Calculate final total (including delivery charge)
             total_cost = subtotal + cod_amount + delivery_charge
+            
+            # 11. Handle extras charges
+            extras = data.get('extras', [])
+            extras_total = Decimal('0')
+            if extras:
+                for charge in extras:
+                    try:
+                        charge_type = charge.charge_type
+                        value = Decimal(str(charge.value))
+                        print("charge values: ", value)
+                        
+                        if charge_type == 'FIXED':
+                            extras_total += value
+                            total_cost += value
+                            print("total cost after the fixed price added: ", total_cost)
+                        elif charge_type == 'PERCENTAGE':
+                            percentage_value = (total_cost * value / 100)
+                            extras_total += percentage_value
+                            total_cost += percentage_value
+                    except (AttributeError, TypeError, ValueError) as e:
+                        print(f"Error processing extra charge: {e}")
+                        continue
+            
+            # Update total_additional_charges to include extras
+            total_additional += extras_total
+            
+            print("total cost at the end: ", total_cost)
+            print("total additional including extras: ", total_additional)
             
             return {
                 'base_rate': base_cost,
@@ -229,96 +259,19 @@ class StatusUpdateSerializer(serializers.Serializer):
 
 
 class SupportTicketSerializer(serializers.ModelSerializer):
-    """Serializer for support tickets with full details"""
-    user = UserSerializer(read_only=True)
-    assigned_to = UserSerializer(read_only=True)
-    shipment = ShipmentRequestSerializer(read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    category_display = serializers.CharField(source='get_category_display', read_only=True)
-    
+    user = serializers.PrimaryKeyRelatedField(queryset=get_user_model().objects.all())
+    assigned_to = serializers.PrimaryKeyRelatedField(queryset=get_user_model().objects.all(), required=False)
+    shipment = serializers.PrimaryKeyRelatedField(queryset=ShipmentRequest.objects.all(), required=False)
+
     class Meta:
         model = SupportTicket
-        fields = [
-            'ticket_number', 'subject', 'message', 'category',
-            'category_display', 'status', 'status_display',
-            'user', 'assigned_to', 'shipment', 'created_at',
-            'updated_at', 'resolved_at', 'comments'
-        ]
-        read_only_fields = [
-            'ticket_number', 'created_at', 'updated_at',
-            'resolved_at', 'comments'
-        ]
+        fields = ['ticket_number', 'subject', 'message', 'category', 'status', 'user', 'assigned_to', 'shipment', 'created_at', 'updated_at', 'resolved_at', 'comments']
+        read_only_fields = ['ticket_number', 'created_at', 'updated_at', 'resolved_at']
 
-
-class SupportTicketCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating support tickets"""
-    shipment = serializers.PrimaryKeyRelatedField(
-        queryset=ShipmentRequest.objects.all(),
-        required=False,
-        write_only=True
-    )
-    
-    class Meta:
-        model = SupportTicket
-        fields = [
-            'subject', 'message', 'category', 'shipment'
-        ]
-    
-    def validate_shipment(self, value):
-        """Validate the shipment belongs to the user"""
-        if value and value.user != self.context['request'].user:
-            raise serializers.ValidationError(
-                "This shipment does not belong to you"
-            )
-        return value
-    
     def create(self, validated_data):
-        """Create a new support ticket"""
-        user = self.context['request'].user
-        return SupportTicket.objects.create(
-            user=user,
-            **validated_data
-        )
+        # Handle ticket creation logic
+        return super().create(validated_data)
 
-
-class SupportTicketUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for updating support tickets by staff"""
-    comment = serializers.CharField(write_only=True, required=False)
-    
-    class Meta:
-        model = SupportTicket
-        fields = ['status', 'assigned_to', 'comment']
-    
-    def validate_assigned_to(self, value):
-        """Ensure assigned user is staff"""
-        if value and not value.is_staff:
-            raise serializers.ValidationError(
-                "Ticket can only be assigned to staff members"
-            )
-        return value
-    
     def update(self, instance, validated_data):
-        """Update the ticket and add comment if provided"""
-        comment = validated_data.pop('comment', None)
-        user = self.context['request'].user
-        
-        # Update the ticket
-        ticket = super().update(instance, validated_data)
-        
-        # Add comment if provided
-        if comment:
-            ticket.add_comment(user, comment)
-        
-        return ticket
-
-
-class SupportTicketCommentSerializer(serializers.Serializer):
-    """Serializer for adding comments to support tickets"""
-    comment = serializers.CharField(required=True)
-    
-    def create(self, validated_data):
-        ticket = self.context['ticket']
-        user = self.context['request'].user
-        
-        ticket.add_comment(user, validated_data['comment'])
-        return ticket 
+        # Handle ticket update logic
+        return super().update(instance, validated_data)

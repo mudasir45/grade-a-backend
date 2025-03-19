@@ -311,16 +311,18 @@ class ShippingRateCalculatorView(APIView):
                 city_delivery_charges = city.delivery_charge
             
             extras = request.data.get('additional_charges')
-            if request.data.get('additional_charges'):                                                                                                                                                                                                                                                                                                                        
+            extras_list = []
+            if request.data.get('additional_charges'):
+                               
                 for charge in extras:
                     if (charge.get('charge_type') == 'FIXED'):
-                        print("Charge fixed: ", charge.get('value'))
                         total_cost += Decimal(charge.get('value'))
+                        
                 
                 for charge in extras:
                     if (charge.get('charge_type') == 'PERCENTAGE'):
-                        print("Charge percentage: ", charge.get('value'))
                         total_cost += (total_cost * Decimal(charge.get('value')) / 100)
+                       
             
             # 9. Prepare detailed response
             response_data = {
@@ -380,6 +382,7 @@ class ExtrasView(APIView):
         return Response(serializer.data)
 
 class CurrencyConversionAPIView(APIView):
+    permission_classes = [permissions.AllowAny]
     def post(self, request, format=None):
         serializer = CurrencyConversionSerializer(data=request.data)
         if serializer.is_valid():

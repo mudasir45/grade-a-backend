@@ -53,7 +53,7 @@ class ServiceTypeAdmin(admin.ModelAdmin):
     readonly_fields = ['id']
     
     def price_display(self, obj):
-        return format_html('<b>${}</b>', obj.price)
+        return format_html('<b>RM {}</b>', obj.price)
     price_display.short_description = 'Service Price'
 
 @admin.register(WeightBasedRate)
@@ -109,12 +109,12 @@ class AdditionalChargeAdmin(admin.ModelAdmin):
 
 
 
-@admin.register(Extras)
-class CountryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'charge_type', 'value', 'is_active', 'id']
-    list_filter = ['is_active']
-    readonly_fields = ['id']
-    search_fields = ['name', 'value', 'charge_type']
-    ordering = ['name']
+# @admin.register(Extras)
+# class CountryAdmin(admin.ModelAdmin):
+#     list_display = ['name', 'charge_type', 'value', 'is_active', 'id']
+#     list_filter = ['is_active']
+#     readonly_fields = ['id']
+#     search_fields = ['name', 'value', 'charge_type']
+#     ordering = ['name']
 
 admin.site.register(Currency)

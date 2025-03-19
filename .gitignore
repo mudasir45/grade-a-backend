@@ -55,7 +55,6 @@ celerybeat-schedule
 celerybeat.pid
 
 # Static files
-static/
-!static/.gitkeep
+
 media/
 !media/.gitkeep 

@@ -9,9 +9,9 @@ app_name = 'shipments'
 router = DefaultRouter()
 router.register(r'status-locations', views.ShipmentStatusLocationViewSet, basename='status-locations')
 router.register(r'shipments', views.ShipmentRequestViewSet, basename='shipment')
-router.register(r'support', views.SupportTicketViewSet, basename='support-ticket')
 
 urlpatterns = [
+    path('', include(router.urls)),
     path('', views.ShipmentListCreateView.as_view(), name='shipment-list-create'),
     path('<str:pk>/', views.ShipmentDetailView.as_view(), name='shipment-detail'),
     path(
@@ -32,6 +32,9 @@ urlpatterns = [
     # Status update endpoints
     path('status-update/<str:shipment_id>/', views.StaffShipmentStatusUpdateView.as_view(), name='status-update'),
     
+    # support ticket endpoints
+    path('tickets/', views.SupportTicketListCreateView.as_view(), name='ticket-list-create'),
+    path('tickets/<str:ticket_number>/', views.SupportTicketDetailView.as_view(), name='ticket-detail'),
+    
     # Include router URLs
-    path('', include(router.urls)),
 ] 

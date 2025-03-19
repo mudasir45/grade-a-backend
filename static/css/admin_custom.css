@@ -1,0 +1,326 @@
+/* Permission Selection Widget - Modern UI/UX */
+:root {
+  --primary-color: #0d6efd;
+  --primary-hover: #0b5ed7;
+  --bg-dark: #f8fafc;
+  --bg-darker: #ffffff;
+  --bg-light: #f1f5f9;
+  --border-color: #e2e8f0;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+}
+
+/* Main container */
+.selector {
+  display: grid;
+  grid-template-columns: 1fr 80px 1fr;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: var(--bg-dark);
+  border-radius: 8px;
+  min-height: 350px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+/* Selection boxes container */
+.selector-available,
+.selector-chosen {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  background: var(--bg-darker);
+  border-radius: 6px;
+  padding: 1rem;
+  width: 100%;
+  border: 1px solid var(--border-color);
+}
+
+/* Headers */
+.selector h2 {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Filter section */
+.selector-filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+/* Filter input */
+.selector-filter input {
+  width: 100%;
+  padding: 0.625rem 1rem;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  font-size: 0.875rem;
+}
+
+.selector-filter input::placeholder {
+  color: var(--text-muted);
+}
+
+.selector-filter input:focus {
+  outline: none;
+  background: rgba(13, 110, 253, 0.04);
+}
+
+/* Select boxes */
+.selector select {
+  flex: 1;
+  min-height: 200px !important;
+  max-height: 200px !important;
+  padding: 0.5rem;
+  color: var(--text-primary);
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  width: 100%;
+}
+
+.selector select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.25);
+}
+
+/* Select options */
+.selector select option {
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-darker);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: normal;
+  word-wrap: break-word;
+}
+
+.selector select option:checked {
+  background: var(--primary-color);
+  color: white;
+}
+
+.selector select option:hover {
+  background: rgba(13, 110, 253, 0.1);
+}
+
+/* Custom scrollbar */
+.selector select::-webkit-scrollbar {
+  width: 8px;
+}
+
+.selector select::-webkit-scrollbar-track {
+  background: var(--bg-darker);
+  border-radius: 4px;
+}
+
+.selector select::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.selector select::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Choose/Remove buttons container */
+.selector-chooser {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+}
+
+/* Choose/Remove all links */
+.selector a.selector-chooseall,
+.selector a.selector-clearall {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  font-weight: 500;
+}
+
+.selector a.selector-chooseall:hover,
+.selector a.selector-clearall:hover {
+  color: var(--primary-color);
+  background: var(--bg-darker);
+  border-color: var(--primary-color);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+.selector a.selector-chooseall::before,
+.selector a.selector-clearall::before {
+  font-family: "Font Awesome 5 Free";
+  font-weight: 900;
+  font-size: 0.875rem;
+}
+
+.selector a.selector-chooseall::before {
+  content: "\f058"; /* Font Awesome check-circle icon */
+}
+
+.selector a.selector-clearall::before {
+  content: "\f057"; /* Font Awesome times-circle icon */
+}
+
+/* Selected count text */
+.selector .selector-filter + select + p {
+  margin: 0.5rem 0;
+  padding: 0.375rem 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  background: var(--bg-light);
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+/* Action buttons */
+.selector-chooser li {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.selector-chooser a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: var(--text-primary);
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: 18px;
+  transition: all 0.2s ease;
+  margin: 0;
+  position: relative;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+.selector-chooser a:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.1);
+}
+
+.selector-add::before {
+  font-family: "Font Awesome 5 Free";
+  content: "\f061"; /* Font Awesome arrow-right icon */
+  font-weight: 900;
+}
+
+.selector-remove::before {
+  font-family: "Font Awesome 5 Free";
+  content: "\f060"; /* Font Awesome arrow-left icon */
+  font-weight: 900;
+}
+
+/* Responsive design */
+@media (max-width: 992px) {
+  .selector {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .selector-available,
+  .selector-chosen {
+    width: 100%;
+  }
+
+  .selector-chooser {
+    flex-direction: row;
+    padding: 0.5rem;
+  }
+
+  .selector-add::before {
+    content: "\f063"; /* Font Awesome arrow-down icon */
+  }
+
+  .selector-remove::before {
+    content: "\f062"; /* Font Awesome arrow-up icon */
+  }
+}
+
+/* Helper text */
+.selector-chosen::after {
+  content: attr(data-selected-count) " selected";
+  display: block;
+  padding: 0.375rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+/* Loading state */
+.selector.is-loading {
+  position: relative;
+}
+
+.selector.is-loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.7);
+  border-radius: 8px;
+  backdrop-filter: blur(2px);
+}
+
+.selector.is-loading::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--text-muted);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  transform: translate(-50%, -50%);
+}
+
+@keyframes spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}

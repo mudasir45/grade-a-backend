@@ -11,7 +11,7 @@ from model_utils import FieldTracker
 
 from accounts.models import City, DriverProfile
 from core.utils import SixDigitIDMixin
-from shipping_rates.models import Country, ServiceType
+from shipping_rates.models import Country, Extras, ServiceType
 
 from .utils import generate_shipment_receipt, generate_tracking_number
 
@@ -133,7 +133,7 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         help_text=_('Driver assigned to deliver this shipment')
     )
     
-    # City Information
+   
     city = models.ForeignKey(
         City,
         on_delete=models.SET_NULL,
@@ -142,6 +142,9 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         blank=True,
         help_text=_('City for delivery, determines delivery charge and assigned driver')
     )
+    
+    extras = models.ManyToManyField(Extras, blank=True)
+    
     delivery_charge = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -259,6 +262,8 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         default=False,
         help_text=_('Whether signature is required upon delivery')
     )
+    
+    
 
     # Tracking Information
     tracking_number = models.CharField(

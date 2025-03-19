@@ -86,7 +86,7 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         'tracking_number', 'status_badge', 'payment_status_badge',
         'user_link', 'staff_link', 'driver_link', 'city_link',
         'sender_name', 'recipient_name',
-        'service_type', 'total_cost_display', 'delivery_charge_display', 'receipt_download', 'created_at'
+        'service_type', 'total_cost_display',  'receipt_download', 'id', 'created_at'
     ]
     list_filter = [
         'status', 'payment_method', 'payment_status',
@@ -159,7 +159,7 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         ('Service Options', {
             'fields': (
                 'service_type', 'insurance_required',
-                'signature_required'
+                'signature_required', 'extras'
             )
         }),
         ('Cost Information', {
