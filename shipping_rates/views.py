@@ -87,7 +87,7 @@ class ShippingRateViewSet(viewsets.ModelViewSet):
                             chargeable_weight = max(data['weight'], vol_weight)
                         
                         # Calculate base cost
-                        base_cost = rate.regulation_charge + (chargeable_weight * rate.per_kg_rate)
+                        base_cost = (chargeable_weight * rate.per_kg_rate)
                         
                         # Get additional charges
                         additional_charges = AdditionalCharge.objects.filter(
@@ -271,7 +271,7 @@ class ShippingRateCalculatorView(APIView):
                 })
             
             # 5. Calculate base cost
-            base_cost = rate.regulation_charge + (chargeable_weight * rate.per_kg_rate)
+            base_cost = (chargeable_weight * rate.per_kg_rate)
             
             # 6. Add service type price
             service_price = service_type.price
@@ -316,12 +316,15 @@ class ShippingRateCalculatorView(APIView):
                                
                 for charge in extras:
                     if (charge.get('charge_type') == 'FIXED'):
-                        total_cost += Decimal(charge.get('value'))
+                        charge_value = Decimal(charge.get('value')) * charge.get('quantity')
+                        total_cost += charge_value
                         
                 
                 for charge in extras:
                     if (charge.get('charge_type') == 'PERCENTAGE'):
-                        total_cost += (total_cost * Decimal(charge.get('value')) / 100)
+                        charge_value = (total_cost * Decimal(charge.get('value')) / 100) * charge.get('quantity')
+                        total_cost += charge_value
+                        
                        
             
             # 9. Prepare detailed response
@@ -350,7 +353,6 @@ class ShippingRateCalculatorView(APIView):
                 },
                 'weight_calculation': volumetric_details,
                 'rate_details': {
-                    'base_rate': float(rate.regulation_charge),
                     'per_kg_rate': float(rate.per_kg_rate),
                     'weight_charge': float(chargeable_weight * rate.per_kg_rate)
                 },

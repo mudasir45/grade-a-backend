@@ -1,11 +1,11 @@
 from decimal import Decimal
 
+from django.apps import apps
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from accounts.models import City, DriverProfile
 from core.utils import SixDigitIDMixin
 
 
@@ -49,7 +49,7 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
         help_text=_('Driver assigned to deliver this request')
     )
     city = models.ForeignKey(
-        City,
+        'accounts.City',
         on_delete=models.SET_NULL,
         related_name='buy4me_requests',
         null=True,
@@ -103,7 +103,8 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
     def save(self, *args, **kwargs):
         # If city is set but driver is not, try to assign a driver
         if self.city and not self.driver:
-            # Get active drivers assigned to this city
+            # Get active drivers assigned to this city using apps.get_model
+            DriverProfile = apps.get_model('accounts', 'DriverProfile')
             driver_profiles = DriverProfile.objects.filter(
                 cities=self.city,
                 is_active=True

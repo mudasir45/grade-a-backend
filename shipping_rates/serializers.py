@@ -31,7 +31,7 @@ class WeightBasedRateSerializer(serializers.ModelSerializer):
         model = WeightBasedRate
         fields = [
             'id', 'zone', 'service_type', 'min_weight', 'max_weight',
-            'regulation_charge', 'per_kg_rate', 'is_active'
+            'per_kg_rate', 'is_active'
         ]
 
 class DimensionalFactorSerializer(serializers.ModelSerializer):

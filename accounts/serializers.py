@@ -4,8 +4,8 @@ from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from accounts.models import (City, Contact, DeliveryCommission, DriverProfile,
-                             Store, UserCountry)
+from accounts.models import (City, Contact, DeliveryCommission, DriverPayment,
+                             DriverProfile, Store, UserCountry)
 
 User = get_user_model()
 
@@ -188,4 +188,10 @@ class StoreSerializer(serializers.ModelSerializer):
         model = Store
         fields = "__all__"
         
+
+
+class DriverPaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DriverPayment
+        fields = '__all__'
 

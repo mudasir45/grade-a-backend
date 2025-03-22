@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.apps import apps
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -9,7 +10,6 @@ from django.utils.crypto import get_random_string
 from django.utils.translation import gettext_lazy as _
 from model_utils import FieldTracker
 
-from accounts.models import City, DriverProfile
 from core.utils import SixDigitIDMixin
 from shipping_rates.models import Country, Extras, ServiceType
 
@@ -85,6 +85,21 @@ class ShipmentStatusLocation(models.Model):
         }
 
 
+class ShipmentExtras(models.Model):
+    """Through model for shipment extras with quantity"""
+    shipment = models.ForeignKey('ShipmentRequest', on_delete=models.CASCADE)
+    extra = models.ForeignKey(Extras, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        verbose_name = _('Shipment Extra')
+        verbose_name_plural = _('Shipment Extras')
+        unique_together = ['shipment', 'extra']
+
+    def __str__(self):
+        return f"{self.shipment.tracking_number} - {self.extra.name} x {self.quantity}"
+
+
 class ShipmentRequest(SixDigitIDMixin, models.Model):
     class Status(models.TextChoices):
         PENDING = 'PENDING', _('Pending')
@@ -133,17 +148,14 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         help_text=_('Driver assigned to deliver this shipment')
     )
     
-   
     city = models.ForeignKey(
-        City,
+        'accounts.City',
         on_delete=models.SET_NULL,
         related_name='shipments',
         null=True,
         blank=True,
         help_text=_('City for delivery, determines delivery charge and assigned driver')
     )
-    
-    extras = models.ManyToManyField(Extras, blank=True)
     
     delivery_charge = models.DecimalField(
         max_digits=10,
@@ -321,6 +333,14 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         validators=[MinValueValidator(0)]
     )
     
+    extras_charges = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(0)],
+        help_text=_('Total charges from extras/additional services')
+    )
+    
     total_cost = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -340,20 +360,27 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
 
     def calculate_total_cost(self):
         """Calculate total cost including delivery charge and COD charge if applicable"""
+        # Ensure all numeric fields have a valid value to prevent None errors
+        weight_charge = self.weight_charge or Decimal('0')
+        service_charge = self.service_charge or Decimal('0')
+        total_additional_charges = self.total_additional_charges or Decimal('0')
+        extras_charges = self.extras_charges or Decimal('0')
+        delivery_charge = self.delivery_charge or Decimal('0')
+        
         subtotal = (
-            self.base_rate + 
-            self.weight_charge + 
-            self.service_charge +
-            self.total_additional_charges
+            weight_charge + 
+            service_charge +
+            total_additional_charges +
+            extras_charges
         )
         
         # Add 5% COD charge if payment method is COD
         if self.payment_method == self.PaymentMethod.COD:
             self.cod_amount = round(subtotal * Decimal('0.05'), 2)
-            return subtotal + self.cod_amount + self.delivery_charge
+            return round(subtotal + self.cod_amount + delivery_charge, 2)
         
         self.cod_amount = Decimal('0')
-        return subtotal + self.delivery_charge
+        return round(subtotal + delivery_charge, 2)
 
     def save(self, *args, **kwargs):
         is_new = not self.pk
@@ -362,9 +389,29 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         if not self.tracking_number:
             self.tracking_number = generate_tracking_number()
         
+        # Ensure all numeric fields have valid values to prevent None errors
+        if self.base_rate is None:
+            self.base_rate = Decimal('0')
+        if self.per_kg_rate is None:
+            self.per_kg_rate = Decimal('0')
+        if self.weight_charge is None:
+            # Only calculate weight_charge if it's not already set
+            self.weight_charge = self.weight * self.per_kg_rate
+        if self.service_charge is None:
+            self.service_charge = Decimal('0')
+        if self.total_additional_charges is None:
+            self.total_additional_charges = Decimal('0')
+        if self.extras_charges is None:
+            self.extras_charges = Decimal('0')
+        if self.delivery_charge is None:
+            self.delivery_charge = Decimal('0')
+        if self.cod_amount is None:
+            self.cod_amount = Decimal('0')
+        
         # If city is set but driver is not, try to assign a driver
         if self.city and not self.driver:
             # Get active drivers assigned to this city
+            DriverProfile = apps.get_model('accounts', 'DriverProfile')
             driver_profiles = DriverProfile.objects.filter(
                 cities=self.city,
                 is_active=True
@@ -377,9 +424,9 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         if self.city and self.delivery_charge == Decimal('0.00'):
             self.delivery_charge = self.city.delivery_charge
         
-        # Calculate total cost including COD charge if applicable
-        self.weight_charge = self.weight * self.per_kg_rate
-        self.total_cost = self.calculate_total_cost()
+        # Calculate total cost if not already set
+        if self.total_cost is None or self.total_cost == Decimal('0'):
+            self.total_cost = self.calculate_total_cost()
         
         # Save the model first
         super().save(*args, **kwargs)
@@ -410,7 +457,7 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
 
 
 class SupportTicket(models.Model):
-    """Model for handling support tickets from users"""
+    """Model for customer support tickets"""
     
     class Status(models.TextChoices):
         OPEN = 'OPEN', _('Open')
@@ -525,5 +572,80 @@ class SupportTicket(models.Model):
             'is_staff': getattr(user, 'is_staff', False)
         })
         self.save()
+
+
+class ShipmentMessageTemplate(models.Model):
+    """
+    Model for storing customizable message templates for shipment communications.
+    This allows staff to update message formats without changing code.
+    """
+    class TemplateType(models.TextChoices):
+        CONFIRMATION = 'confirmation', _('Shipment Confirmation')
+        NOTIFICATION = 'notification', _('Shipment Notification')
+        DELIVERY = 'delivery', _('Delivery Notification')
+        SENDER_NOTIFICATION = 'sender_notification', _('Sender Notification')
+        CUSTOM = 'custom', _('Custom Message')
+    
+    template_type = models.CharField(
+        max_length=20,
+        choices=TemplateType.choices,
+        unique=True,
+        help_text=_('Type of message template')
+    )
+    subject = models.CharField(
+        max_length=200,
+        help_text=_('Subject line for email communications')
+    )
+    message_content = models.TextField(
+        help_text=_(
+            'Message template with placeholders. Available placeholders: '
+            '{recipient_name}, {sender_name}, {sender_country}, {tracking_number}, '
+            '{package_type}, {weight}, {dimensions}, {status}, {current_location}, '
+            '{estimated_delivery}, {description}, {sender_email}, {sender_phone}'
+        )
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text=_('Whether this template is currently active')
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = _('Shipment Message Template')
+        verbose_name_plural = _('Shipment Message Templates')
+        ordering = ['template_type']
+    
+    def __str__(self):
+        return f"{self.get_template_type_display()}"
+    
+    def preview_with_sample_data(self):
+        """Generate a sample preview with placeholder data"""
+        from datetime import datetime, timedelta
+
+        # Sample data for preview
+        sample_data = {
+            'recipient_name': 'John Doe',
+            'sender_name': 'ABC Company',
+            'sender_country': 'United States',
+            'tracking_number': 'TRK123456789',
+            'package_type': 'Package',
+            'weight': '2.5',
+            'dimensions': '30 × 20 × 15',
+            'status': 'In Transit',
+            'current_location': 'Distribution Center, New York',
+            'estimated_delivery': (datetime.now() + timedelta(days=3)).strftime('%d %B %Y'),
+            'description': 'Electronics and accessories',
+            'sender_email': 'shipper@example.com',
+            'sender_phone': '+1234567890',
+        }
+        
+        # Replace placeholders in the message content
+        preview = self.message_content
+        for key, value in sample_data.items():
+            placeholder = '{' + key + '}'
+            preview = preview.replace(placeholder, str(value))
+            
+        return preview
 
 

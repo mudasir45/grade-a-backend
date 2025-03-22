@@ -1,6 +1,7 @@
 import re
 from decimal import Decimal
 
+from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser, UserManager
 from django.core.validators import (MaxValueValidator, MinValueValidator,
@@ -8,7 +9,10 @@ from django.core.validators import (MaxValueValidator, MinValueValidator,
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from core.utils import SixDigitIDMixin, generate_unique_id
+from buy4me.models import Buy4MeRequest
+from core.utils import (SixDigitIDMixin, decrypt_text, encrypt_text,
+                        generate_unique_id)
+from shipments.models import ShipmentRequest
 
 # your_app/models.py
 
@@ -107,8 +111,14 @@ class User(AbstractUser):
         related_name='default_shipping_method'
     )
     preferred_currency = models.CharField(max_length=10, choices=Currency.choices, blank=True, default='USD')
+    # Store the encrypted password for retrieval (more secure than plaintext)
+    plain_password = models.CharField(max_length=255, blank=True, null=True, 
+                                     help_text=_("Encrypted password for message generation"))
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Default password for new users
+    DEFAULT_PASSWORD = "123456"
 
     # Use the custom manager
     objects = CustomUserManager()
@@ -136,6 +146,31 @@ class User(AbstractUser):
             self.username = self.phone_number
             
         super().save(*args, **kwargs)
+        
+    def set_password(self, raw_password):
+        """
+        Overriding set_password to also store the encrypted password.
+        This allows retrieving the original password when needed.
+        """
+        # Encrypt and store the plain password
+        if raw_password:
+            self.plain_password = encrypt_text(raw_password)
+            
+        # Call the parent method to set the hashed password
+        super().set_password(raw_password)
+    
+    def get_plain_password(self):
+        """
+        Get the decrypted plain password if available.
+        Returns the plain password or the default password if not set.
+        """
+        if self.plain_password:
+            decrypted = decrypt_text(self.plain_password)
+            if decrypted:
+                return decrypted
+                
+        # Fallback to default password
+        return self.DEFAULT_PASSWORD
 
 
 class Store(SixDigitIDMixin, models.Model):
@@ -290,22 +325,31 @@ class DriverProfile(SixDigitIDMixin, models.Model):
     
     def update_stats(self):
         """Update driver statistics"""
-        # Count completed shipments
-        from shipments.models import ShipmentRequest
-        completed_shipments = ShipmentRequest.objects.filter(
-            driver=self.user,
-            status=ShipmentRequest.Status.DELIVERED
-        ).count()
+        from django.db.models import Q
+
+        # Initialize counters
+        completed_deliveries = 0
         
-        # Count completed buy4me requests
-        from buy4me.models import Buy4MeRequest
-        completed_buy4me = Buy4MeRequest.objects.filter(
-            driver=self.user,
-            status=Buy4MeRequest.Status.COMPLETED
-        ).count()
+        # Get the models only when needed
+        ShipmentRequest = apps.get_model('shipments', 'ShipmentRequest')
+        Buy4MeRequest = apps.get_model('buy4me', 'Buy4MeRequest')
+        
+        # Count completed shipments if the model exists
+        if ShipmentRequest:
+            completed_deliveries += ShipmentRequest.objects.filter(
+                driver=self.user,
+                status='DELIVERED'
+            ).count()
+        
+        # Count completed buy4me requests if the model exists
+        if Buy4MeRequest:
+            completed_deliveries += Buy4MeRequest.objects.filter(
+                driver=self.user,
+                status='COMPLETED'
+            ).count()
         
         # Update total deliveries
-        self.total_deliveries = completed_shipments + completed_buy4me
+        self.total_deliveries = completed_deliveries
         self.save(update_fields=['total_deliveries', 'updated_at'])
 
 class DeliveryCommission(SixDigitIDMixin, models.Model):
@@ -362,5 +406,58 @@ class DeliveryCommission(SixDigitIDMixin, models.Model):
         if is_new:
             self.driver.total_earnings += self.amount
             self.driver.save(update_fields=['total_earnings', 'updated_at'])
+    
+    
+class DriverPayment(SixDigitIDMixin, models.Model):
+    """
+    Model for tracking driver payments
+    """
+    class PaymentFor(models.TextChoices):
+        SHIPMENT = 'SHIPMENT', _('Shipment')
+        BUY4ME = 'BUY4ME', _('Buy4Me')
+        
+    driver = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='payments',
+        help_text=_("Driver who Done the payment")
+    )
+    payment_id = models.CharField(
+        max_length=50,
+        help_text=_("Payment ID")
+    )
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text=_("Amount of the payment")
+    )
+    payment_for = models.CharField(
+        max_length=50,
+        help_text=_("Payment for"),
+        choices=PaymentFor.choices,
+        default=PaymentFor.SHIPMENT
+    )
+    shipment = models.ForeignKey(
+        "shipments.ShipmentRequest",
+        on_delete=models.CASCADE,
+        related_name='driver_payments',
+        help_text=_("Shipment for which the payment is made"),
+        null=True,
+        blank=True
+    )
+    buy4me = models.ForeignKey(
+        "buy4me.Buy4MeRequest",
+        on_delete=models.CASCADE,
+        related_name='driver_payments',
+        help_text=_("Buy4Me request for which the payment is made"),
+        null=True,
+        blank=True
+    )
+    payment_date = models.DateTimeField(
+        auto_now_add=True,
+        help_text=_("Date and time of the payment")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     

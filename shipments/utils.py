@@ -279,3 +279,36 @@ def generate_tracking_number():
     }]
     
     return tracking_number 
+
+def generate_receipt_table_data(shipment):
+    """Generate data for receipt PDF table"""
+    # Format monetary values with commas and 2 decimal places
+    service_charge = format_decimal(shipment.service_charge)
+    weight_charge = format_decimal(shipment.weight_charge)
+    total_additional_charges = format_decimal(shipment.total_additional_charges)
+    extras_charges = format_decimal(shipment.extras_charges)
+    delivery_charge = format_decimal(shipment.delivery_charge)
+    cod_amount = format_decimal(shipment.cod_amount)
+    total_cost = format_decimal(shipment.total_cost)
+    
+    # Build table data
+    table_data = [
+        ['Item', 'Amount'],
+        ['Service Charge:', f"${service_charge}"],
+        ['Weight Charge:', f"${weight_charge}"],
+        ['Additional Charges:', f"${total_additional_charges}"],
+        ['Extras Charges:', f"${extras_charges}"],
+    ]
+    
+    # Add delivery charge if present
+    if shipment.delivery_charge and shipment.delivery_charge > 0:
+        table_data.append(['Delivery Charge:', f"${delivery_charge}"])
+    
+    # Add COD charge if present
+    if shipment.cod_amount and shipment.cod_amount > 0:
+        table_data.append(['COD Fee:', f"${cod_amount}"])
+    
+    # Add total
+    table_data.append(['Total:', f"${total_cost}"])
+    
+    return table_data 

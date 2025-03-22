@@ -14,11 +14,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from accounts.models import City, Contact, Store, UserCountry
+from accounts.models import City, Contact, DriverPayment, Store, UserCountry
 from buy4me.models import Buy4MeRequest
 from shipping_rates.models import Country
 
 from .serializers import (CitySerializer, ContactSerializer,
+                          DriverPaymentSerializer,
                           PhoneTokenObtainPairSerializer, StoreSerializer,
                           UserCountrySerializer, UserCreateSerializer,
                           UserSerializer)
@@ -413,3 +414,18 @@ class CitiesView(APIView):
         cities = City.objects.filter(is_active=True)
         serializer = CitySerializer(cities, many=True)
         return Response(serializer.data)
+    
+class DriverPaymentView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        driver_payments = DriverPayment.objects.filter(driver=request.user)
+        serializer = DriverPaymentSerializer(driver_payments, many=True)
+        return Response(serializer.data)
+    
+    def post(self, request):
+        serializer = DriverPaymentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+    

@@ -94,11 +94,11 @@ class WeightBasedRate(SixDigitIDMixin, models.Model):
         decimal_places=2,
         validators=[MinValueValidator(0)]
     )
-    regulation_charge = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2,
-        validators=[MinValueValidator(0)]
-    )
+    # regulation_charge = models.DecimalField(
+    #     max_digits=10, 
+    #     decimal_places=2,
+    #     validators=[MinValueValidator(0)]
+    # )
     per_kg_rate = models.DecimalField(
         max_digits=10, 
         decimal_places=2,

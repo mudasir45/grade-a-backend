@@ -60,7 +60,7 @@ class ServiceTypeAdmin(admin.ModelAdmin):
 class WeightBasedRateAdmin(admin.ModelAdmin):
     list_display = [
         'zone', 'service_type', 'weight_range', 
-        'regulation_charge_display', 'per_kg_rate_display', 'is_active'
+        'per_kg_rate_display', 'is_active'
     ]
     list_filter = ['is_active', 'zone', 'service_type']
     search_fields = ['zone__name', 'service_type__name']
@@ -69,9 +69,6 @@ class WeightBasedRateAdmin(admin.ModelAdmin):
         return f"{obj.min_weight}kg - {obj.max_weight}kg"
     weight_range.short_description = 'Weight Range'
     
-    def regulation_charge_display(self, obj):
-        return format_html('<b>${}</b>', obj.regulation_charge)
-    regulation_charge_display.short_description = 'Base Rate'
     
     def per_kg_rate_display(self, obj):
         return format_html('<b>${}/kg</b>', obj.per_kg_rate)
@@ -109,12 +106,13 @@ class AdditionalChargeAdmin(admin.ModelAdmin):
 
 
 
-# @admin.register(Extras)
-# class CountryAdmin(admin.ModelAdmin):
-#     list_display = ['name', 'charge_type', 'value', 'is_active', 'id']
-#     list_filter = ['is_active']
-#     readonly_fields = ['id']
-#     search_fields = ['name', 'value', 'charge_type']
-#     ordering = ['name']
+@admin.register(Extras)
+class ExtrasAdmin(admin.ModelAdmin):
+    list_display = ['name', 'charge_type', 'value', 'is_active', 'id']
+    list_filter = ['is_active']
+    readonly_fields = ['id']
+    search_fields = ['name', 'value', 'charge_type']
+    ordering = ['name']
 
 admin.site.register(Currency)
+

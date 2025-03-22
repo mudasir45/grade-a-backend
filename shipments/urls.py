@@ -32,6 +32,9 @@ urlpatterns = [
     # Status update endpoints
     path('status-update/<str:shipment_id>/', views.StaffShipmentStatusUpdateView.as_view(), name='status-update'),
     
+    # Message generator endpoint
+    path('message/<str:pk>/', views.ShipmentMessageGeneratorView.as_view(), name='shipment-message'),
+    
     # support ticket endpoints
     path('tickets/', views.SupportTicketListCreateView.as_view(), name='ticket-list-create'),
     path('tickets/<str:ticket_number>/', views.SupportTicketDetailView.as_view(), name='ticket-detail'),

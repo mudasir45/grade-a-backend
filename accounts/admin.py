@@ -7,8 +7,8 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 from django.utils.translation import gettext_lazy as _
 
-from .models import (City, Contact, DeliveryCommission, DriverProfile, Store,
-                     User, UserCountry)
+from .models import (City, Contact, DeliveryCommission, DriverPayment,
+                     DriverProfile, Store, User, UserCountry)
 
 
 class CustomUserCreationForm(UserCreationForm):
@@ -37,11 +37,11 @@ class CustomUserCreationForm(UserCreationForm):
         phone_number = self.cleaned_data.get('phone_number')
         
         # Check if phone number contains only digits
-        if not re.match(r'^\d+$', phone_number):
+        if phone_number and not re.match(r'^\d+$', phone_number):
             raise forms.ValidationError(_("Phone number must contain only digits."))
             
         # Check if phone number is unique
-        if User.objects.filter(phone_number=phone_number).exists():
+        if phone_number and User.objects.filter(phone_number=phone_number).exists():
             raise forms.ValidationError(_("A user with this phone number already exists."))
             
         return phone_number
@@ -96,6 +96,7 @@ class UserAdmin(BaseUserAdmin):
     fieldsets = (
         (None, {'fields': ('phone_number', 'email', 'password')}),
         (_('Personal info'), {'fields': ('first_name', 'last_name', 'address', 'country', 'default_shipping_method', 'preferred_currency')}),
+        (_('Security'), {'fields': ('plain_password',), 'classes': ('collapse',), 'description': _('Passwords are stored in encrypted form and can be decrypted only when generating messages.')}),
         (_('Permissions'), {
             'fields': ('user_type', 'is_active', 'is_staff', 'is_superuser', 'is_verified', 'groups', 'user_permissions'),
         }),
@@ -185,3 +186,11 @@ class DeliveryCommissionAdmin(admin.ModelAdmin):
         (None, {'fields': ('driver', 'delivery_type', 'reference_id', 'amount')}),
         (_('Additional Information'), {'fields': ('description', 'earned_at')}),
     )
+
+@admin.register(DriverPayment)
+class DriverPaymentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'driver', 'payment_for', 'amount', 'payment_date')
+    list_filter = ('payment_for', 'payment_date')
+    search_fields = ('driver__user__username', 'payment_for', 'payment_id')
+    readonly_fields = ('payment_date',)
+

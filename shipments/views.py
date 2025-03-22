@@ -7,6 +7,7 @@ from django_filters import rest_framework as filters
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -14,7 +15,8 @@ from accounts.models import User
 
 from .models import ShipmentRequest, ShipmentStatusLocation, SupportTicket
 from .permissions import IsStaffUser
-from .serializers import (ShipmentCreateSerializer, ShipmentRequestSerializer,
+from .serializers import (ShipmentCreateSerializer, ShipmentMessageSerializer,
+                          ShipmentRequestSerializer,
                           ShipmentStatusLocationSerializer,
                           StatusUpdateSerializer, SupportTicketSerializer)
 
@@ -928,3 +930,74 @@ class SupportTicketDetailView(APIView):
 
         ticket.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+@extend_schema(tags=['shipments'])
+class ShipmentMessageGeneratorView(APIView):
+    """
+    View for generating professional messages for shipments.
+    This can be used to create standardized messages for shipment notifications.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_object(self, pk):
+        # For user access
+        return get_object_or_404(
+            ShipmentRequest.objects.select_related(
+                'sender_country',
+                'recipient_country',
+                'service_type'
+            ),
+            pk=pk,
+            user=self.request.user
+        )
+    
+    def get_shipment_for_staff(self, pk, staff_user):
+        # For staff access
+        if not staff_user.is_staff and not staff_user.groups.filter(name='Staff').exists():
+            raise PermissionDenied("Staff access required")
+        
+        # Staff can access any shipment
+        return get_object_or_404(
+            ShipmentRequest.objects.select_related(
+                'sender_country',
+                'recipient_country',
+                'service_type'
+            ),
+            pk=pk
+        )
+    
+    @extend_schema(
+        summary="Generate shipment message",
+        description="Generate a professional message for a shipment with sender details",
+        request=ShipmentMessageSerializer,
+        responses={200: {"type": "object", "properties": {"message": {"type": "string"}}}}
+    )
+    def post(self, request, pk):
+        """Generate a professional message for a shipment"""
+        # Check if user is staff or regular user
+        if request.user.is_staff or request.user.groups.filter(name='Staff').exists():
+            shipment = self.get_shipment_for_staff(pk, request.user)
+        else:
+            shipment = self.get_object(pk)
+        
+        # Create a copy of the data and add user_id if not present
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        
+        # If include_credentials is True and user_id is not provided, use the shipment's user ID
+        if data.get('include_credentials') and 'user_id' not in data and shipment.user:
+            data['user_id'] = str(shipment.user.id)
+            
+        serializer = ShipmentMessageSerializer(data=data)
+        
+        if serializer.is_valid():
+            try:
+                # Generate message text
+                message = serializer.generate_message(shipment)
+                return Response({"message": message}, status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response(
+                    {"error": f"Error generating message: {str(e)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -1,13 +1,20 @@
+import datetime
+import uuid
+
 from django.contrib import admin, messages
 from django.contrib.auth import get_user_model
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, F, Q
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
 
 from accounts.models import City, DriverProfile, User
+from shipping_rates.models import Extras
 
-from .models import ShipmentRequest, ShipmentStatusLocation, SupportTicket
+from .models import (ShipmentExtras, ShipmentMessageTemplate, ShipmentRequest,
+                     ShipmentStatusLocation, SupportTicket)
 
 
 class StaffAssignmentFilter(admin.SimpleListFilter):
@@ -67,6 +74,14 @@ class CityFilter(admin.SimpleListFilter):
         return queryset
 
 
+class ShipmentExtrasInline(admin.TabularInline):
+    model = ShipmentExtras
+    extra = 1
+    verbose_name = "Extra"
+    verbose_name_plural = "Extras"
+    autocomplete_fields = ['extra']
+
+
 @admin.register(ShipmentStatusLocation)
 class ShipmentStatusLocationAdmin(admin.ModelAdmin):
     """Admin interface for managing shipment status locations"""
@@ -114,68 +129,60 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         'assign_to_city'
     ]
     
+    inlines = [ShipmentExtrasInline]
+    
     fieldsets = (
-        ('Assignment Information', {
+        ('Shipment Information', {
             'fields': (
-                'user',
-                'staff',
-                'driver',
-                'city',
-                
-            ),
-            'classes': ('wide',),
-            'description': 'Manage user, staff, driver, and city assignments'
-        }),
-        ('Tracking Information', {
-            'fields': (
-                'tracking_number', 'status', 'current_location',
-                'estimated_delivery', 'tracking_history', 'receipt_download'
-            )
-        }),
-        ('Payment Information', {
-            'fields': (
-                'payment_method', 'payment_status', 'payment_date',
-                'transaction_id', 'cod_amount'
+                'tracking_number', 'status', 'user', 'staff', 'driver', 'city', 'notes'
             )
         }),
         ('Sender Information', {
             'fields': (
-                'sender_name', 'sender_email', 'sender_phone',
+                'sender_name', 'sender_email', 'sender_phone', 
                 'sender_address', 'sender_country'
             )
         }),
         ('Recipient Information', {
             'fields': (
-                'recipient_name', 'recipient_email', 'recipient_phone',
+                'recipient_name', 'recipient_email', 'recipient_phone', 
                 'recipient_address', 'recipient_country'
             )
         }),
-        ('Package Details', {
+        ('Package Information', {
             'fields': (
-                'package_type', 'weight', 'length', 'width', 'height',
+                'package_type', 'weight', ('length', 'width', 'height'),
                 'description', 'declared_value'
             )
         }),
         ('Service Options', {
             'fields': (
-                'service_type', 'insurance_required',
-                'signature_required', 'extras'
+                'service_type', 'insurance_required', 'signature_required'
+            )
+        }),
+        ('Payment Information', {
+            'fields': (
+                ('payment_method', 'payment_status'),
+                'payment_date', 'transaction_id'
             )
         }),
         ('Cost Information', {
             'fields': (
                 'cost_breakdown_display',
                 ('base_rate', 'per_kg_rate', 'weight_charge'),
-                ('service_charge', 'total_additional_charges'),
-                'delivery_charge',
-                'total_cost'
-            ),
-            'description': 'Cost breakdown including base costs, delivery charge, and total'
+                'service_charge', 'total_additional_charges',
+                'delivery_charge', 'cod_amount', 'total_cost'
+            )
         }),
-        ('Additional Information', {
-            'fields': ('notes',),
-            'classes': ('collapse',)
+        ('Tracking Information', {
+            'fields': (
+                'current_location', 'tracking_history',
+                'estimated_delivery', 'receipt_download'
+            )
         }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at')
+        })
     )
     
     def get_form(self, request, obj=None, **kwargs):
@@ -320,6 +327,7 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             Weight Charge: ${obj.weight_charge:.2f}<br>
             Service Charge: ${obj.service_charge:.2f}<br>
             Additional Charges: ${obj.total_additional_charges:.2f}<br>
+            Extras Charges: ${obj.extras_charges:.2f}<br>
             <b>Subtotal: ${subtotal:.2f}</b><br>
         """
         
@@ -527,6 +535,10 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
                 <td>Additional Charges</td>
                 <td>$%.2f</td>
             </tr>
+            <tr>
+                <td>Extras Charges</td>
+                <td>$%.2f</td>
+            </tr>
             <tr class="subtotal">
                 <td>Subtotal</td>
                 <td>$%.2f</td>
@@ -539,6 +551,7 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             obj.weight, obj.per_kg_rate, obj.weight_charge, obj.weight_charge,
             obj.service_charge,
             obj.total_additional_charges,
+            obj.extras_charges,
             subtotal
         )
         
@@ -567,7 +580,6 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         html += footer_html % (obj.delivery_charge, obj.total_cost)
         
         # Use mark_safe instead of format_html since we're already handling the formatting
-        from django.utils.safestring import mark_safe
         return mark_safe(html)
     cost_breakdown_display.short_description = 'Cost Breakdown'
 
@@ -701,3 +713,140 @@ class SupportTicketAdmin(admin.ModelAdmin):
         updated = queryset.update(status=SupportTicket.Status.CLOSED)
         self.message_user(request, f"{updated} tickets marked as closed.")
     mark_as_closed.short_description = "Mark as closed"
+
+
+@admin.register(ShipmentMessageTemplate)
+class ShipmentMessageTemplateAdmin(admin.ModelAdmin):
+    list_display = ['template_type', 'get_template_type_display', 'subject', 'is_active', 'updated_at']
+    list_filter = ['template_type', 'is_active']
+    search_fields = ['subject', 'message_content']
+    readonly_fields = ['created_at', 'updated_at', 'preview_template']
+    fieldsets = (
+        (None, {
+            'fields': ('template_type', 'subject', 'is_active')
+        }),
+        ('Message Content', {
+            'fields': ('message_content',),
+            'description': 'Use placeholders like {recipient_name}, {sender_name}, {tracking_number}, etc.'
+        }),
+        ('Preview', {
+            'fields': ('preview_template',),
+            'description': 'This shows how the template will look with sample data.'
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_template_type_display(self, obj):
+        return obj.get_template_type_display()
+    get_template_type_display.short_description = 'Template Type'
+    
+    def preview_template(self, obj):
+        """Display a preview of the template with sample data"""
+        if obj.id:  # Only if the object has been saved
+            preview = obj.preview_with_sample_data()
+            return mark_safe(f'<div style="padding: 10px; border: 1px solid #ddd; background-color: #f9f9f9;">'
+                            f'<pre style="white-space: pre-wrap; font-family: Arial, sans-serif;">{preview}</pre>'
+                            f'</div>')
+        return "Save the template first to see a preview."
+    preview_template.short_description = 'Preview'
+    
+    def save_model(self, request, obj, form, change):
+        """Save the model and create default templates if needed"""
+        super().save_model(request, obj, form, change)
+        
+        # When adding a new template, check if we need to create other default templates
+        if not change:  # This is a new template
+            self._create_default_templates()
+            
+    def _create_default_templates(self):
+        """Create default templates for all template types if they don't exist"""
+        template_types = ShipmentMessageTemplate.TemplateType.choices
+        existing_types = set(ShipmentMessageTemplate.objects.values_list('template_type', flat=True))
+        
+        for template_type, display_name in template_types:
+            if template_type not in existing_types:
+                # Create default template based on type
+                if template_type == 'confirmation':
+                    ShipmentMessageTemplate.objects.create(
+                        template_type=template_type,
+                        subject='Your Shipment Has Been Confirmed',
+                        message_content="""Dear {recipient_name},
+
+Your shipment has been confirmed and is now being processed. You can track your shipment using tracking number: {tracking_number}.
+
+Shipment Details:
+- Sender: {sender_name}
+- From: {sender_country}
+- Package Type: {package_type}
+- Weight: {weight} kg
+- Dimensions: {dimensions} cm
+
+Estimated delivery date: {estimated_delivery}.
+
+Thank you for choosing Grade-A Express for your shipping needs.
+
+Best regards,
+The Grade-A Express Team"""
+                    )
+                elif template_type == 'notification':
+                    ShipmentMessageTemplate.objects.create(
+                        template_type=template_type,
+                        subject='Your Shipment Is On The Way',
+                        message_content="""Dear {recipient_name},
+
+We'd like to inform you that a package from {sender_name} in {sender_country} is on its way to you. The tracking number for this shipment is: {tracking_number}.
+
+Current Status: {status}
+Current Location: {current_location}
+
+Shipment Origin: {sender_country}
+Sender Contact: {sender_email} / {sender_phone}
+
+Our delivery team will contact you prior to delivery. Please ensure someone is available to receive the package.
+
+Thank you for choosing Grade-A Express for your shipping needs.
+
+Best regards,
+The Grade-A Express Team"""
+                    )
+                elif template_type == 'delivery':
+                    ShipmentMessageTemplate.objects.create(
+                        template_type=template_type,
+                        subject='Your Package Is Out For Delivery',
+                        message_content="""Dear {recipient_name},
+
+Good news! Your package from {sender_name} in {sender_country} is out for delivery today. Please ensure someone is available at the delivery address to receive the package.
+
+Tracking Number: {tracking_number}
+Package Type: {package_type}
+Weight: {weight} kg
+
+If you have any special delivery instructions, please contact our customer service team immediately.
+
+Thank you for choosing Grade-A Express for your shipping needs.
+
+Best regards,
+The Grade-A Express Team"""
+                    )
+                elif template_type == 'custom':
+                    ShipmentMessageTemplate.objects.create(
+                        template_type=template_type,
+                        subject='Update On Your Shipment',
+                        message_content="""Dear {recipient_name},
+
+We have an update regarding your shipment from {sender_country}. Tracking Number: {tracking_number}
+Current Status: {status}
+
+Sender: {sender_name}
+Origin: {sender_country}
+
+Please check our website or tracking portal for more details.
+
+Thank you for choosing Grade-A Express for your shipping needs.
+
+Best regards,
+The Grade-A Express Team"""
+                    )
