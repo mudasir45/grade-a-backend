@@ -17,6 +17,8 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
     driver = serializers.StringRelatedField(read_only=True)
     city = CitySerializer(read_only=True)
     cod_amount = serializers.DecimalField(read_only=True, max_digits=10, decimal_places=2)
+    per_kg_rate = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_additional_charges = serializers.DecimalField(max_digits=10, decimal_places=2)
     payment_method = serializers.ChoiceField(choices=ShipmentRequest.PaymentMethod.choices)
     payment_status = serializers.ChoiceField(choices=ShipmentRequest.PaymentStatus.choices)
     extras = serializers.SerializerMethodField()
@@ -29,9 +31,8 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'user', 'staff', 'driver', 'city', 'tracking_number', 'status',
             'current_location', 'estimated_delivery',
-            'tracking_history', 'base_rate', 'per_kg_rate',
-            'weight_charge', 'total_additional_charges',
-            'total_cost', 'created_at', 'updated_at',
+            'tracking_history', 'base_rate',
+            'weight_charge', 'total_cost', 'created_at', 'updated_at',
             'cod_amount', 'payment_status', 'payment_date',
             'transaction_id', 'delivery_charge'
         ]
@@ -72,6 +73,17 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
                 
             if 'total_cost' in cost_breakdown and 'total_cost' not in data_copy:
                 data_copy['total_cost'] = cost_breakdown['total_cost']
+                
+            if 'per_kg_rate' in cost_breakdown and 'per_kg_rate' not in data_copy:
+                data_copy['per_kg_rate'] = cost_breakdown['per_kg_rate']
+                
+            # Calculate and set total_additional_charges from the cost_breakdown
+            if 'additional_charges' in cost_breakdown and 'total_additional_charges' not in data_copy:
+                total_additional = Decimal('0.00')
+                for charge in cost_breakdown['additional_charges']:
+                    if isinstance(charge, dict) and 'amount' in charge:
+                        total_additional += Decimal(str(charge['amount']))
+                data_copy['total_additional_charges'] = str(round(total_additional, 2))
         
         # Set defaults for required decimal fields to prevent None errors
         decimal_fields = ['base_rate', 'weight_charge', 'service_charge', 
@@ -116,6 +128,18 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
             if 'city_delivery_charge' in cost_breakdown:
                 validated_data['delivery_charge'] = Decimal(str(cost_breakdown['city_delivery_charge']))
                 
+            # Handle per_kg_rate
+            if 'per_kg_rate' in cost_breakdown:
+                validated_data['per_kg_rate'] = Decimal(str(cost_breakdown['per_kg_rate']))
+                
+            # Handle additional_charges
+            if 'additional_charges' in cost_breakdown:
+                total_additional = Decimal('0.00')
+                for charge in cost_breakdown['additional_charges']:
+                    if isinstance(charge, dict) and 'amount' in charge:
+                        total_additional += Decimal(str(charge['amount']))
+                validated_data['total_additional_charges'] = total_additional
+                
             # Handle total_cost
             if 'total_cost' in cost_breakdown:
                 validated_data['total_cost'] = Decimal(str(cost_breakdown['total_cost']))
@@ -150,8 +174,11 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
                     )
                     
                     # Add to extras_charges
-                    value = Decimal(str(extra_data.get('value', 0)))
-                    extras_charges += value * quantity
+                    if 'amount' in extra_data:
+                        extras_charges += Decimal(str(extra_data.get('amount', 0)))
+                    else:
+                        value = Decimal(str(extra_data.get('value', 0)))
+                        extras_charges += value * quantity
                 except (Extras.DoesNotExist, Exception) as e:
                     print(f"Error creating shipment extra: {e}")
                     continue

@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -20,6 +21,9 @@ from reportlab.lib.units import inch, mm
 from reportlab.platypus import (Image, Paragraph, SimpleDocTemplate, Spacer,
                                 Table, TableStyle)
 
+# Set up logger
+logger = logging.getLogger(__name__)
+
 # Don't import models at the module level to avoid circular imports
 # Instead, import them inside the functions where needed
 
@@ -39,47 +43,30 @@ def format_decimal(value, decimal_places=2):
         return "0.00"
 
 def calculate_shipping_cost(
-    sender_country_id, 
-    recipient_country_id, 
-    service_type_id, 
-    weight=None, 
-    dimensions=None, 
-    city_id=None, 
-    extras_data=None, 
-    additional_charges_data=None
+    sender_country_id=None,
+    recipient_country_id=None,
+    service_type_id=None,
+    weight=None,
+    dimensions=None,
+    city_id=None,
+    extras_data=None
 ):
     """
-    Calculate shipping cost based on provided parameters.
-    
-    Args:
-        sender_country_id (str): ID of the sender country
-        recipient_country_id (str): ID of the recipient country
-        service_type_id (str): ID of the service type
-        weight (Decimal, optional): Weight in kg. Defaults to None.
-        dimensions (dict, optional): Dictionary containing length, width, height in cm. 
-                                    Defaults to None. Example: {'length': 10, 'width': 20, 'height': 30}
-        city_id (str, optional): ID of the delivery city. Defaults to None.
-        extras_data (list, optional): List of extras with their quantities. 
-                                    Defaults to None. Example: [{'id': 'EXT123', 'quantity': 2}]
-        additional_charges_data (list, optional): List of additional charges. Defaults to None.
-    
-    Returns:
-        dict: Complete cost breakdown with all charges and totals
-    
-    Raises:
-        ValidationError: If required parameters are missing or invalid
-        ObjectDoesNotExist: If any of the required objects don't exist
+    Calculate shipping cost based on provided parameters
+    Returns a cost breakdown dictionary with all details
     """
-    # Import models here to avoid circular imports
+    # Import models inside function to avoid circular imports
     from accounts.models import City
-    from shipping_rates.models import (AdditionalCharge, Country,
-                                       DimensionalFactor, Extras, ServiceType,
-                                       ShippingZone, WeightBasedRate)
+    from shipping_rates.models import (AdditionalCharge, DimensionalFactor,
+                                       ServiceType, ShippingZone,
+                                       WeightBasedRate)
 
-    # Initialize cost breakdown structure
+    from .models import Country, Extras
+
+    # Initialize cost breakdown dictionary
     cost_breakdown = {
-        'service_price': Decimal('0.00'),
         'weight_charge': Decimal('0.00'),
+        'service_price': Decimal('0.00'),
         'city_delivery_charge': Decimal('0.00'),
         'additional_charges': [],
         'extras': [],
@@ -89,131 +76,87 @@ def calculate_shipping_cost(
     
     try:
         # Validate required parameters
-        if not sender_country_id or not recipient_country_id or not service_type_id:
-            raise ValidationError("Sender country, recipient country, and service type are required")
-            
-        if not weight and not dimensions:
-            raise ValidationError("Either weight or dimensions must be provided")
-            
-        # Get and validate countries
+        if not all([sender_country_id, recipient_country_id, service_type_id, weight]):
+            cost_breakdown['errors'].append("Missing required parameters")
+            return cost_breakdown
+        
+        # Convert weight to Decimal to ensure accurate calculations
         try:
-            sender_country = Country.objects.get(
-                id=sender_country_id,
-                country_type=Country.CountryType.DEPARTURE,
-                is_active=True
-            )
-        except Country.DoesNotExist:
-            raise ObjectDoesNotExist(f"Sender country with id {sender_country_id} does not exist or is not active")
+            weight = Decimal(str(weight))
+        except (InvalidOperation, TypeError):
+            cost_breakdown['errors'].append("Invalid weight format")
+            return cost_breakdown
             
+        # Get the service type
         try:
-            recipient_country = Country.objects.get(
-                id=recipient_country_id,
-                country_type=Country.CountryType.DESTINATION,
-                is_active=True
-            )
-        except Country.DoesNotExist:
-            raise ObjectDoesNotExist(f"Recipient country with id {recipient_country_id} does not exist or is not active")
-            
-        # Get and validate service type
-        try:
-            service_type = ServiceType.objects.get(
-                id=service_type_id,
-                is_active=True
-            )
+            service_type = ServiceType.objects.get(id=service_type_id, is_active=True)
         except ServiceType.DoesNotExist:
-            raise ObjectDoesNotExist(f"Service type with id {service_type_id} does not exist or is not active")
-            
+            cost_breakdown['errors'].append(f"Service type with id {service_type_id} does not exist or is not active")
+            return cost_breakdown
+        
         # Find applicable shipping zone
-        shipping_zone = ShippingZone.objects.filter(
-            departure_countries=sender_country,
-            destination_countries=recipient_country,
-            is_active=True
-        ).first()
+        try:
+            sender_country = Country.objects.get(id=sender_country_id, is_active=True)
+            recipient_country = Country.objects.get(id=recipient_country_id, is_active=True)
             
-        if not shipping_zone:
-            raise ValidationError(f"No shipping zone found for route: {sender_country.name} to {recipient_country.name}")
+            # Get shipping zones that include both sender and recipient countries
+            shipping_zones = ShippingZone.objects.filter(
+                departure_countries=sender_country,
+                destination_countries=recipient_country,
+                is_active=True
+            )
             
-        # Process weight and dimensions
-        if weight:
-            # Convert to Decimal if it's not already
-            weight = Decimal(str(weight)) if not isinstance(weight, Decimal) else weight
-        
-        # Calculate volumetric weight if dimensions are provided
-        volumetric_weight = None
-        chargeable_weight = weight if weight else Decimal('0')
-        
-        if dimensions:
+            if not shipping_zones.exists():
+                cost_breakdown['errors'].append(
+                    f"No shipping zone found for {sender_country.name} to {recipient_country.name}"
+                )
+                return cost_breakdown
+                
+            # Use the first applicable shipping zone
+            shipping_zone = shipping_zones.first()
+            
+            # Calculate actual vs volumetric weight
+            chargeable_weight = weight
+            
+            # Handle dimensional weight if dimensions are provided
+            if dimensions:
+                try:
+                    # Get dimensional factor for the service type
+                    dim_factor = DimensionalFactor.objects.filter(
+                        service_type=service_type,
+                        is_active=True
+                    ).first()
+                    
+                    if dim_factor:
+                        # Calculate volumetric weight
+                        length = Decimal(str(dimensions.get('length', 0)))
+                        width = Decimal(str(dimensions.get('width', 0)))
+                        height = Decimal(str(dimensions.get('height', 0)))
+                        
+                        if all([length > 0, width > 0, height > 0]):
+                            volumetric_weight = (length * width * height) / Decimal(str(dim_factor.factor))
+                            
+                            # Use the greater of actual vs volumetric weight
+                            if volumetric_weight > weight:
+                                chargeable_weight = volumetric_weight
+                                logger.info(f"Using volumetric weight: {volumetric_weight}kg instead of actual weight: {weight}kg")
+                except Exception as e:
+                    logger.warning(f"Error calculating volumetric weight: {str(e)}")
+                    # Continue with actual weight
+                    pass
+            
+            # Get applicable rate based on weight
             try:
-                length = Decimal(str(dimensions.get('length', 0)))
-                width = Decimal(str(dimensions.get('width', 0)))
-                height = Decimal(str(dimensions.get('height', 0)))
-                
-                if length <= 0 or width <= 0 or height <= 0:
-                    raise ValidationError("Dimensions must be positive values")
-                    
-                volume = length * width * height
-                
-                # Get dimensional factor for service type
-                dim_factor = DimensionalFactor.objects.filter(
-                    service_type=service_type,
-                    is_active=True
-                ).first()
-                
-                if dim_factor:
-                    volumetric_weight = volume / Decimal(str(dim_factor.factor))
-                    
-                    # If volumetric weight is greater than actual weight, use volumetric weight
-                    if not weight or volumetric_weight > weight:
-                        chargeable_weight = volumetric_weight
-                    
-                    # Add volumetric details to cost breakdown
-                    cost_breakdown['volumetric'] = {
-                        'dimensions': {
-                            'length': float(length),
-                            'width': float(width),
-                            'height': float(height),
-                            'volume': float(volume)
-                        },
-                        'factor': dim_factor.factor,
-                        'volumetric_weight': float(volumetric_weight),
-                        'chargeable_weight': float(chargeable_weight),
-                        'used_weight_type': 'Volumetric' if volumetric_weight > (weight or 0) else 'Actual'
-                    }
-            except (TypeError, ValueError) as e:
-                cost_breakdown['errors'].append(f"Error calculating volumetric weight: {str(e)}")
-        
-        # Find applicable weight-based rate
-        if chargeable_weight:
-            try:
-                # Print debug information
-                print(f"DEBUG - Finding rate for: zone={shipping_zone.id}, service_type={service_type.id}, weight={chargeable_weight}")
-                
-                # Round the chargeable weight to 2 decimal places
-                chargeable_weight = round(chargeable_weight, 2)
-                
-                rate = WeightBasedRate.objects.filter(
+                rate = WeightBasedRate.objects.get(
                     zone=shipping_zone,
                     service_type=service_type,
                     min_weight__lte=chargeable_weight,
                     max_weight__gte=chargeable_weight,
                     is_active=True
-                ).first()
+                )
                 
                 if not rate:
-                    # Log all available rates for debugging
-                    available_rates = WeightBasedRate.objects.filter(
-                        zone=shipping_zone,
-                        service_type=service_type,
-                        is_active=True
-                    )
-                    
-                    rate_info = []
-                    for r in available_rates:
-                        rate_info.append(f"Rate: min={r.min_weight}, max={r.max_weight}, per_kg={r.per_kg_rate}")
-                    
-                    rate_info_str = ", ".join(rate_info) if rate_info else "No rates found"
-                    print(f"DEBUG - Available rates: {rate_info_str}")
-                    
+                    logger.warning(f"No rate found for weight {chargeable_weight}kg and service {service_type.name}")
                     raise ValidationError(f"No rate found for weight {chargeable_weight}kg and service {service_type.name}")
                     
                 # Calculate base weight charge
@@ -224,6 +167,12 @@ def calculate_shipping_cost(
                 cost_breakdown['per_kg_rate'] = rate.per_kg_rate
             except Exception as e:
                 cost_breakdown['errors'].append(f"Error finding rate: {str(e)}")
+        except Country.DoesNotExist:
+            cost_breakdown['errors'].append(f"One or more countries not found or not active")
+            return cost_breakdown
+        except Exception as e:
+            cost_breakdown['errors'].append(f"Error finding shipping zone: {str(e)}")
+            return cost_breakdown
         
         # Add service price
         cost_breakdown['service_price'] = service_type.price
@@ -239,18 +188,30 @@ def calculate_shipping_cost(
         # Process additional charges
         if shipping_zone and service_type:
             try:
-                for charge in AdditionalCharge.objects.filter(
+                # Log the shipping zone and service type for debugging
+                logger.info(f"Fetching additional charges for zone={shipping_zone.id}, service_type={service_type.id}")
+                
+                # Get all applicable additional charges
+                additional_charges = AdditionalCharge.objects.filter(
                     zones=shipping_zone,
                     service_types=service_type,
                     is_active=True
-                ):
+                )
+                
+                # Log how many charges were found
+                logger.info(f"Found {additional_charges.count()} active additional charges")
+                
+                for charge in additional_charges:
                     charge_amount = Decimal('0.00')
                     if charge.charge_type == 'FIXED':
                         charge_amount = charge.value
+                        logger.info(f"Applied FIXED charge: {charge.name}, value={charge.value}")
                     else:  # PERCENTAGE
                         charge_amount = (cost_breakdown['weight_charge'] * charge.value / 100)
+                        logger.info(f"Applied PERCENTAGE charge: {charge.name}, value={charge.value}%, base={cost_breakdown['weight_charge']}")
                     
                     charge_amount = round(charge_amount, 2)
+                    logger.info(f"Charge amount for {charge.name}: {charge_amount}")
                     
                     cost_breakdown['additional_charges'].append({
                         'id': charge.id,
@@ -259,8 +220,15 @@ def calculate_shipping_cost(
                         'value': float(charge.value),
                         'amount': float(charge_amount)
                     })
+                
+                # Calculate and log total additional charges
+                total_additional = sum(Decimal(str(charge['amount'])) for charge in cost_breakdown['additional_charges'])
+                logger.info(f"Total additional charges: {total_additional}")
+                
             except Exception as e:
-                cost_breakdown['errors'].append(f"Error processing additional charges: {str(e)}")
+                error_msg = f"Error processing additional charges: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                cost_breakdown['errors'].append(error_msg)
                 
         # Process extras if provided
         if extras_data:

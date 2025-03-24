@@ -120,6 +120,10 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
 
     # Field tracker
     tracker = FieldTracker()
+    
+    # Internal flags for signaling recalculations
+    _from_admin = False
+    _from_extras_change = False
 
     # User Information
     user = models.ForeignKey(

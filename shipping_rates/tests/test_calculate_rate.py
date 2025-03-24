@@ -124,9 +124,9 @@ class ShippingRateCalculatorViewTest(TestCase):
         self.assertEqual(response.data['cost_breakdown']['weight_charge'], 400.0)
         self.assertEqual(response.data['cost_breakdown']['total_cost'], 460.0)  # 50 + 400 + 10
         
-        # Verify volumetric details are included
-        self.assertIn('weight_calculation', response.data)
-        self.assertEqual(response.data['weight_calculation']['chargeable_weight'], 80.0)
+        # Verify rate details are included
+        self.assertIn('rate_details', response.data)
+        self.assertEqual(response.data['rate_details']['per_kg_rate'], 5.0)
     
     def test_calculate_rate_with_city(self):
         """Test rate calculation with city delivery charge"""

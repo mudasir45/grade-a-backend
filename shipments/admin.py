@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from decimal import Decimal
 
 from django.contrib import admin, messages
 from django.contrib.auth import get_user_model
@@ -11,7 +12,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 from accounts.models import City, DriverProfile, User
-from shipping_rates.models import Extras
+from shipping_rates.models import AdditionalCharge, Extras, ShippingZone
 
 from .models import (ShipmentExtras, ShipmentMessageTemplate, ShipmentRequest,
                      ShipmentStatusLocation, SupportTicket)
@@ -80,14 +81,6 @@ class ShipmentExtrasInline(admin.TabularInline):
     verbose_name = "Extra"
     verbose_name_plural = "Extras"
     autocomplete_fields = ['extra']
-    
-    def save_model(self, request, obj, form, change):
-        """Mark the parent instance for recalculation"""
-        if obj.shipment_id:
-            shipment = obj.shipment
-            shipment._from_admin = True
-            shipment.save()
-        super().save_model(request, obj, form, change)
 
 
 @admin.register(ShipmentStatusLocation)
@@ -178,9 +171,10 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             'fields': (
                 'cost_breakdown_display',
                 ('base_rate', 'per_kg_rate', 'weight_charge'),
-                'service_charge', 'total_additional_charges',
+                ('service_charge', 'total_additional_charges', 'extras_charges'),
                 'delivery_charge', 'cod_amount', 'total_cost'
-            )
+            ),
+            'classes': ('wide',)
         }),
         ('Tracking Information', {
             'fields': (
@@ -521,6 +515,11 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             .cost-table .total:hover {
                 background-color: #1a237e;
             }
+            .additional-details {
+                margin-left: 20px;
+                font-size: 12px;
+                color: #555;
+            }
         </style>
         <table class="cost-table">
             <tr>
@@ -532,36 +531,142 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
                 <td>$%.2f</td>
             </tr>
             <tr>
-                <td>Weight Charge (%.2f kg × $%.2f = $%.2f)</td>
+                <td>Weight Charge (%.2f kg × $%.2f/kg = $%.2f)</td>
                 <td>$%.2f</td>
             </tr>
             <tr>
                 <td>Service Charge</td>
                 <td>$%.2f</td>
             </tr>
-            <tr>
-                <td>Additional Charges</td>
-                <td>$%.2f</td>
-            </tr>
-            <tr>
-                <td>Extras Charges</td>
-                <td>$%.2f</td>
-            </tr>
-            <tr class="subtotal">
-                <td>Subtotal</td>
-                <td>$%.2f</td>
-            </tr>
         """
         
-        # Format the main table
+        # Format the main table beginning
         html = html % (
             obj.base_rate,
             obj.weight, obj.per_kg_rate, obj.weight_charge, obj.weight_charge,
             obj.service_charge,
-            obj.total_additional_charges,
-            obj.extras_charges,
-            subtotal
         )
+        
+        # Get additional charges from related models
+        from shipping_rates.models import AdditionalCharge, ShippingZone
+
+        # Only add this section if there are additional charges
+        if obj.total_additional_charges > 0:
+            try:
+                # Get the shipping zone
+                shipping_zone = ShippingZone.objects.filter(
+                    departure_countries=obj.sender_country,
+                    destination_countries=obj.recipient_country,
+                    is_active=True
+                ).first()
+                
+                # Get additional charges details
+                charges = AdditionalCharge.objects.filter(
+                    zones=shipping_zone,
+                    service_types=obj.service_type,
+                    is_active=True
+                )
+                
+                if charges.exists():
+                    # Add a row for total additional charges
+                    html += """
+                    <tr>
+                        <td>Additional Charges<div class="additional-details">
+                    """
+                    
+                    # List each additional charge
+                    for charge in charges:
+                        charge_amount = Decimal('0.00')
+                        if charge.charge_type == 'FIXED':
+                            charge_amount = charge.value
+                        else:  # PERCENTAGE
+                            charge_amount = (obj.weight_charge * charge.value / 100)
+                            
+                        charge_amount = round(charge_amount, 2)
+                        
+                        charge_type_display = "Fixed" if charge.charge_type == 'FIXED' else f"{charge.value}%"
+                        html += f"• {charge.name} ({charge_type_display}): ${charge_amount:.2f}<br>"
+                    
+                    html += """
+                        </div></td>
+                        <td>$%.2f</td>
+                    </tr>
+                    """ % obj.total_additional_charges
+                else:
+                    # Just show the total if we can't get the details
+                    html += """
+                    <tr>
+                        <td>Additional Charges</td>
+                        <td>$%.2f</td>
+                    </tr>
+                    """ % obj.total_additional_charges
+            except Exception:
+                # Fallback in case of error
+                html += """
+                <tr>
+                    <td>Additional Charges</td>
+                    <td>$%.2f</td>
+                </tr>
+                """ % obj.total_additional_charges
+        else:
+            # No additional charges
+            html += """
+            <tr>
+                <td>Additional Charges</td>
+                <td>$0.00</td>
+            </tr>
+            """
+        
+        # Get extras details
+        extras = list(obj.shipmentextras_set.select_related('extra').all())
+        
+        if extras:
+            # Add a row for extras charges
+            html += """
+            <tr>
+                <td>Extras Charges<div class="additional-details">
+            """
+            
+            # List each extra
+            for shipment_extra in extras:
+                extra = shipment_extra.extra
+                quantity = shipment_extra.quantity
+                
+                # Calculate the charge
+                extra_charge = Decimal('0.00')
+                if extra.charge_type == 'FIXED':
+                    extra_charge = extra.value * quantity
+                else:  # PERCENTAGE
+                    # Calculate percentage of weight_charge + service_charge
+                    base_amount = obj.weight_charge + obj.service_charge
+                    extra_charge = (base_amount * extra.value / 100) * quantity
+                
+                extra_charge = round(extra_charge, 2)
+                
+                charge_type_display = "Fixed" if extra.charge_type == 'FIXED' else f"{extra.value}%"
+                html += f"• {extra.name} × {quantity} ({charge_type_display}): ${extra_charge:.2f}<br>"
+            
+            html += """
+                </div></td>
+                <td>$%.2f</td>
+            </tr>
+            """ % obj.extras_charges
+        else:
+            # No extras
+            html += """
+            <tr>
+                <td>Extras Charges</td>
+                <td>$%.2f</td>
+            </tr>
+            """ % obj.extras_charges
+        
+        # Add subtotal
+        html += """
+        <tr class="subtotal">
+            <td>Subtotal</td>
+            <td>$%.2f</td>
+        </tr>
+        """ % subtotal
         
         # Add COD charge if applicable
         if obj.payment_method == 'COD' and obj.cod_amount > 0:
@@ -570,8 +675,8 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
                 <td>COD Charge (5%%)</td>
                 <td>$%.2f</td>
             </tr>
-            """
-            html += cod_html % obj.cod_amount
+            """ % obj.cod_amount
+            html += cod_html
         
         # Add delivery charge and total
         footer_html = """
@@ -584,8 +689,8 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             <td>$%.2f</td>
         </tr>
         </table>
-        """
-        html += footer_html % (obj.delivery_charge, obj.total_cost)
+        """ % (obj.delivery_charge, obj.total_cost)
+        html += footer_html
         
         # Use mark_safe instead of format_html since we're already handling the formatting
         return mark_safe(html)

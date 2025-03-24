@@ -176,7 +176,7 @@ class CalculateShippingCostTest(TestCase):
         )
         
         self.assertTrue(len(result['errors']) > 0)
-        self.assertIn("Object not found", result['errors'][0])
+        self.assertIn("countries not found", result['errors'][0])
         
         # Test with missing weight and dimensions
         result = calculate_shipping_cost(
@@ -186,4 +186,4 @@ class CalculateShippingCostTest(TestCase):
         )
         
         self.assertTrue(len(result['errors']) > 0)
-        self.assertIn("Either weight or dimensions must be provided", result['errors'][0]) 
+        self.assertIn("Missing required parameters", result['errors'][0]) 

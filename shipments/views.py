@@ -1,4 +1,5 @@
 import string
+from decimal import Decimal
 
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404, render
@@ -148,6 +149,12 @@ class ShipmentDetailView(APIView):
             data['service_charge'] = cost_breakdown['service_price']
             data['delivery_charge'] = cost_breakdown['city_delivery_charge']
             data['per_kg_rate'] = cost_breakdown.get('per_kg_rate', 0)
+            
+            # Calculate total_additional_charges from cost_breakdown
+            total_additional = Decimal('0.00')
+            for charge in cost_breakdown['additional_charges']:
+                total_additional += Decimal(str(charge['amount']))
+            data['total_additional_charges'] = total_additional
             
             # Calculate extras_charges
             if 'extras_total' in cost_breakdown:
@@ -668,6 +675,12 @@ class StaffShipmentManagementView(APIView):
                 data['delivery_charge'] = cost_breakdown['city_delivery_charge']
                 data['per_kg_rate'] = cost_breakdown.get('per_kg_rate', 0)
                 
+                # Calculate total_additional_charges from cost_breakdown
+                total_additional = Decimal('0.00')
+                for charge in cost_breakdown['additional_charges']:
+                    total_additional += Decimal(str(charge['amount']))
+                data['total_additional_charges'] = total_additional
+                
                 # Calculate extras_charges
                 if 'extras_total' in cost_breakdown:
                     data['extras_charges'] = cost_breakdown['extras_total']
@@ -788,6 +801,12 @@ class StaffShipmentManagementView(APIView):
                 data['service_charge'] = cost_breakdown['service_price']
                 data['delivery_charge'] = cost_breakdown['city_delivery_charge']
                 data['per_kg_rate'] = cost_breakdown.get('per_kg_rate', 0)
+                
+                # Calculate total_additional_charges from cost_breakdown
+                total_additional = Decimal('0.00')
+                for charge in cost_breakdown['additional_charges']:
+                    total_additional += Decimal(str(charge['amount']))
+                data['total_additional_charges'] = total_additional
                 
                 # Calculate extras_charges
                 if 'extras_total' in cost_breakdown:

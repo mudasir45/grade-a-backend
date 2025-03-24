@@ -96,6 +96,16 @@ def recalculate_shipping_cost(sender, instance, **kwargs):
         instance.service_charge = cost_breakdown['service_price']
         instance.delivery_charge = cost_breakdown['city_delivery_charge']
         
+        # Ensure per_kg_rate is correctly set
+        if 'per_kg_rate' in cost_breakdown:
+            instance.per_kg_rate = cost_breakdown['per_kg_rate']
+        
+        # Update total_additional_charges by summing the amounts
+        total_additional = Decimal('0.00')
+        for charge in cost_breakdown['additional_charges']:
+            total_additional += Decimal(str(charge['amount']))
+        instance.total_additional_charges = total_additional
+        
         # Calculate extras_charges
         if 'extras_total' in cost_breakdown:
             instance.extras_charges = cost_breakdown['extras_total']
@@ -166,9 +176,86 @@ def recalculate_on_extras_change(sender, instance, **kwargs):
     Trigger recalculation when extras are changed
     """
     if instance.shipment_id:
-        # Mark for recalculation and save the parent shipment
-        instance.shipment._from_extras_change = True
-        instance.shipment.save()
+        # Directly update the shipment without using flags
+        try:
+            # Set a flag on the instance to avoid recursion in pre_save signal
+            instance.shipment._from_extras_change = True
+            
+            # Manually call the recalculate function
+            from .utils import calculate_shipping_cost
+
+            # Get shipment with all related fields
+            shipment = ShipmentRequest.objects.get(pk=instance.shipment.pk)
+            
+            # Get all extras from the shipment
+            extras_data = []
+            for shipment_extra in ShipmentExtras.objects.filter(shipment=shipment):
+                extras_data.append({
+                    'id': shipment_extra.extra.id,
+                    'quantity': shipment_extra.quantity
+                })
+            
+            # Prepare dimensions
+            dimensions = None
+            if shipment.length and shipment.width and shipment.height:
+                dimensions = {
+                    'length': shipment.length,
+                    'width': shipment.width,
+                    'height': shipment.height
+                }
+            
+            # Calculate shipping cost
+            cost_breakdown = calculate_shipping_cost(
+                sender_country_id=shipment.sender_country.id,
+                recipient_country_id=shipment.recipient_country.id,
+                service_type_id=shipment.service_type.id,
+                weight=shipment.weight,
+                dimensions=dimensions,
+                city_id=shipment.city.id if shipment.city else None,
+                extras_data=extras_data
+            )
+            
+            # Check for errors
+            if cost_breakdown['errors']:
+                logger.warning(f"Cost recalculation errors for shipment {shipment.id}: {cost_breakdown['errors']}")
+                return
+                
+            # Update shipment fields with the new cost breakdown
+            shipment.weight_charge = cost_breakdown['weight_charge']
+            shipment.service_charge = cost_breakdown['service_price']
+            shipment.delivery_charge = cost_breakdown['city_delivery_charge']
+            
+            # Ensure per_kg_rate is correctly set
+            if 'per_kg_rate' in cost_breakdown:
+                shipment.per_kg_rate = cost_breakdown['per_kg_rate']
+            
+            # Explicitly calculate and set total_additional_charges from the cost_breakdown
+            total_additional = Decimal('0.00')
+            for charge in cost_breakdown['additional_charges']:
+                total_additional += Decimal(str(charge['amount']))
+            shipment.total_additional_charges = total_additional
+            
+            # Calculate extras_charges
+            if 'extras_total' in cost_breakdown:
+                shipment.extras_charges = cost_breakdown['extras_total']
+                
+            # Recalculate total_cost
+            shipment.total_cost = shipment.calculate_total_cost()
+            
+            # Save the shipment with updated fields only to prevent recursion
+            ShipmentRequest.objects.filter(pk=shipment.pk).update(
+                weight_charge=shipment.weight_charge,
+                service_charge=shipment.service_charge,
+                delivery_charge=shipment.delivery_charge,
+                per_kg_rate=shipment.per_kg_rate,
+                total_additional_charges=shipment.total_additional_charges,
+                extras_charges=shipment.extras_charges,
+                total_cost=shipment.total_cost
+            )
+            
+            logger.info(f"Updated cost for shipment {shipment.id}: total={shipment.total_cost}")
+        except Exception as e:
+            logger.error(f"Error recalculating shipping cost: {str(e)}", exc_info=True)
 
 @receiver(post_delete, sender=ShipmentExtras)
 def recalculate_on_extras_delete(sender, instance, **kwargs):
@@ -176,11 +263,16 @@ def recalculate_on_extras_delete(sender, instance, **kwargs):
     Trigger recalculation when extras are deleted
     """
     if instance.shipment_id:
-        # Get the shipment and trigger recalculation
+        # Get the shipment and trigger direct recalculation
         try:
+            # Get shipment with all related fields
             shipment = ShipmentRequest.objects.get(pk=instance.shipment_id)
+            
+            # Set a flag on the instance to avoid recursion in pre_save signal
             shipment._from_extras_change = True
-            shipment.save()
+            
+            # Call the same recalculation logic used in post_save handler
+            recalculate_on_extras_change(sender, instance, **kwargs)
         except ShipmentRequest.DoesNotExist:
             # Shipment was already deleted, nothing to do
             pass
