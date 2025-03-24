@@ -19,6 +19,7 @@ from .serializers import (ShipmentCreateSerializer, ShipmentMessageSerializer,
                           ShipmentRequestSerializer,
                           ShipmentStatusLocationSerializer,
                           StatusUpdateSerializer, SupportTicketSerializer)
+from .utils import calculate_shipping_cost
 
 # Create your views here.
 
@@ -89,8 +90,74 @@ class ShipmentDetailView(APIView):
         """Update specific fields of a shipment"""
         shipment = self.get_object(pk)
         
-        # Process request data to handle cost breakdown
+        # Make a copy of the request data
         data = request.data.copy()
+        
+        # Calculate shipping cost if relevant fields are updated
+        recalculate_prices = any(field in data for field in [
+            'weight', 'length', 'width', 'height', 'sender_country', 
+            'recipient_country', 'service_type', 'city', 'additional_charges'
+        ])
+        
+        if recalculate_prices:
+            # Prepare dimensions if they exist
+            dimensions = None
+            if all(key in data for key in ['length', 'width', 'height']):
+                dimensions = {
+                    'length': data.get('length', shipment.length),
+                    'width': data.get('width', shipment.width),
+                    'height': data.get('height', shipment.height)
+                }
+            elif all(hasattr(shipment, key) for key in ['length', 'width', 'height']):
+                dimensions = {
+                    'length': shipment.length,
+                    'width': shipment.width,
+                    'height': shipment.height
+                }
+            
+            # Extract extras data from request if provided
+            extras_data = data.get('additional_charges', None)
+            
+            # Get current values for fields not in the request data
+            sender_country_id = data.get('sender_country', shipment.sender_country_id)
+            recipient_country_id = data.get('recipient_country', shipment.recipient_country_id)
+            service_type_id = data.get('service_type', shipment.service_type_id)
+            weight = data.get('weight', shipment.weight)
+            city_id = data.get('city', shipment.city_id if shipment.city else None)
+            
+            # Calculate shipping cost
+            cost_breakdown = calculate_shipping_cost(
+                sender_country_id=sender_country_id,
+                recipient_country_id=recipient_country_id,
+                service_type_id=service_type_id,
+                weight=weight,
+                dimensions=dimensions,
+                city_id=city_id,
+                extras_data=extras_data
+            )
+            
+            # Check for errors
+            if cost_breakdown['errors']:
+                return Response(
+                    {'errors': cost_breakdown['errors']},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Update data with calculated values
+            data['weight_charge'] = cost_breakdown['weight_charge']
+            data['service_charge'] = cost_breakdown['service_price']
+            data['delivery_charge'] = cost_breakdown['city_delivery_charge']
+            data['per_kg_rate'] = cost_breakdown.get('per_kg_rate', 0)
+            
+            # Calculate extras_charges
+            if 'extras_total' in cost_breakdown:
+                data['extras_charges'] = cost_breakdown['extras_total']
+            
+            # Set total cost
+            data['total_cost'] = cost_breakdown['total_cost']
+            
+            # Add the cost breakdown to the data for processing by the serializer
+            data['cost_breakdown'] = cost_breakdown
         
         # Update serializer with processed data
         serializer = ShipmentRequestSerializer(
@@ -542,8 +609,74 @@ class StaffShipmentManagementView(APIView):
         try:
             shipment = self.get_shipment(pk, request.user)
             
-            # Process request data to handle cost breakdown
+            # Make a copy of the request data
             data = request.data.copy()
+            
+            # Calculate shipping cost if relevant fields are present
+            recalculate_prices = any(field in data for field in [
+                'weight', 'length', 'width', 'height', 'sender_country', 
+                'recipient_country', 'service_type', 'city', 'additional_charges'
+            ])
+            
+            if recalculate_prices:
+                # Prepare dimensions if they exist
+                dimensions = None
+                if all(key in data for key in ['length', 'width', 'height']):
+                    dimensions = {
+                        'length': data.get('length', shipment.length),
+                        'width': data.get('width', shipment.width),
+                        'height': data.get('height', shipment.height)
+                    }
+                elif all(hasattr(shipment, key) for key in ['length', 'width', 'height']):
+                    dimensions = {
+                        'length': shipment.length,
+                        'width': shipment.width,
+                        'height': shipment.height
+                    }
+                
+                # Extract extras data from request if provided
+                extras_data = data.get('additional_charges', None)
+                
+                # Get current values for fields not in the request data
+                sender_country_id = data.get('sender_country', shipment.sender_country_id)
+                recipient_country_id = data.get('recipient_country', shipment.recipient_country_id)
+                service_type_id = data.get('service_type', shipment.service_type_id)
+                weight = data.get('weight', shipment.weight)
+                city_id = data.get('city', shipment.city_id if shipment.city else None)
+                
+                # Calculate shipping cost
+                cost_breakdown = calculate_shipping_cost(
+                    sender_country_id=sender_country_id,
+                    recipient_country_id=recipient_country_id,
+                    service_type_id=service_type_id,
+                    weight=weight,
+                    dimensions=dimensions,
+                    city_id=city_id,
+                    extras_data=extras_data
+                )
+                
+                # Check for errors
+                if cost_breakdown['errors']:
+                    return Response(
+                        {'errors': cost_breakdown['errors']},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Update data with calculated values
+                data['weight_charge'] = cost_breakdown['weight_charge']
+                data['service_charge'] = cost_breakdown['service_price']
+                data['delivery_charge'] = cost_breakdown['city_delivery_charge']
+                data['per_kg_rate'] = cost_breakdown.get('per_kg_rate', 0)
+                
+                # Calculate extras_charges
+                if 'extras_total' in cost_breakdown:
+                    data['extras_charges'] = cost_breakdown['extras_total']
+                
+                # Set total cost
+                data['total_cost'] = cost_breakdown['total_cost']
+                
+                # Add the cost breakdown to the data for processing by the serializer
+                data['cost_breakdown'] = cost_breakdown
             
             # Update serializer with processed data
             serializer = ShipmentRequestSerializer(
@@ -597,8 +730,74 @@ class StaffShipmentManagementView(APIView):
         try:
             shipment = self.get_shipment(pk, request.user)
             
-            # Process request data to handle cost breakdown
+            # Make a copy of the request data
             data = request.data.copy()
+            
+            # Calculate shipping cost if relevant fields are being updated
+            recalculate_prices = any(field in data for field in [
+                'weight', 'length', 'width', 'height', 'sender_country', 
+                'recipient_country', 'service_type', 'city', 'additional_charges'
+            ])
+            
+            if recalculate_prices:
+                # Prepare dimensions if they exist
+                dimensions = None
+                if all(key in data for key in ['length', 'width', 'height']):
+                    dimensions = {
+                        'length': data.get('length', shipment.length),
+                        'width': data.get('width', shipment.width),
+                        'height': data.get('height', shipment.height)
+                    }
+                elif all(hasattr(shipment, key) for key in ['length', 'width', 'height']):
+                    dimensions = {
+                        'length': shipment.length,
+                        'width': shipment.width,
+                        'height': shipment.height
+                    }
+                
+                # Extract extras data from request if provided
+                extras_data = data.get('additional_charges', None)
+                
+                # Get current values for fields not in the request data
+                sender_country_id = data.get('sender_country', shipment.sender_country_id)
+                recipient_country_id = data.get('recipient_country', shipment.recipient_country_id)
+                service_type_id = data.get('service_type', shipment.service_type_id)
+                weight = data.get('weight', shipment.weight)
+                city_id = data.get('city', shipment.city_id if shipment.city else None)
+                
+                # Calculate shipping cost
+                cost_breakdown = calculate_shipping_cost(
+                    sender_country_id=sender_country_id,
+                    recipient_country_id=recipient_country_id,
+                    service_type_id=service_type_id,
+                    weight=weight,
+                    dimensions=dimensions,
+                    city_id=city_id,
+                    extras_data=extras_data
+                )
+                
+                # Check for errors
+                if cost_breakdown['errors']:
+                    return Response(
+                        {'errors': cost_breakdown['errors']},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Update data with calculated values
+                data['weight_charge'] = cost_breakdown['weight_charge']
+                data['service_charge'] = cost_breakdown['service_price']
+                data['delivery_charge'] = cost_breakdown['city_delivery_charge']
+                data['per_kg_rate'] = cost_breakdown.get('per_kg_rate', 0)
+                
+                # Calculate extras_charges
+                if 'extras_total' in cost_breakdown:
+                    data['extras_charges'] = cost_breakdown['extras_total']
+                
+                # Set total cost
+                data['total_cost'] = cost_breakdown['total_cost']
+                
+                # Add the cost breakdown to the data for processing by the serializer
+                data['cost_breakdown'] = cost_breakdown
             
             # Update serializer with processed data
             serializer = ShipmentRequestSerializer(

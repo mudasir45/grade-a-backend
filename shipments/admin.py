@@ -80,6 +80,14 @@ class ShipmentExtrasInline(admin.TabularInline):
     verbose_name = "Extra"
     verbose_name_plural = "Extras"
     autocomplete_fields = ['extra']
+    
+    def save_model(self, request, obj, form, change):
+        """Mark the parent instance for recalculation"""
+        if obj.shipment_id:
+            shipment = obj.shipment
+            shipment._from_admin = True
+            shipment.save()
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(ShipmentStatusLocation)
@@ -582,6 +590,11 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         # Use mark_safe instead of format_html since we're already handling the formatting
         return mark_safe(html)
     cost_breakdown_display.short_description = 'Cost Breakdown'
+
+    def save_model(self, request, obj, form, change):
+        """Mark instance as coming from admin panel to trigger recalculation"""
+        obj._from_admin = True
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(SupportTicket)

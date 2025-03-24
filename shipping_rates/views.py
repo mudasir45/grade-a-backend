@@ -175,159 +175,62 @@ class ShippingRateCalculatorView(APIView):
     )
     def post(self, request):
         """Calculate shipping rate with detailed cost breakdown"""
+        from shipments.utils import calculate_shipping_cost
+        
         serializer = ShippingCalculatorSerializer(data=request.data)
         
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
+        
         data = serializer.validated_data
         
+        # Prepare dimensions if provided
+        dimensions = None
+        if all(key in data for key in ['length', 'width', 'height']):
+            dimensions = {
+                'length': data['length'],
+                'width': data['width'],
+                'height': data['height']
+            }
+        
+        # Extract extras data from request if provided
+        extras_data = request.data.get('additional_charges', None)
+        
+        # Call our utility function to calculate shipping cost
+        cost_breakdown = calculate_shipping_cost(
+            sender_country_id=data['origin_country'],
+            recipient_country_id=data['destination_country'],
+            service_type_id=data['service_type'],
+            weight=data.get('weight'),
+            dimensions=dimensions,
+            city_id=request.data.get('city'),
+            extras_data=extras_data
+        )
+        
+        # Check for errors
+        if cost_breakdown['errors']:
+            return Response(
+                {'errors': cost_breakdown['errors']},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get route and service details for response
         try:
-            # 1. Get countries and validate route
-            origin = Country.objects.get(
-                id=data['origin_country'],
-                country_type=Country.CountryType.DEPARTURE,
-                is_active=True
-            )
-            destination = Country.objects.get(
-                id=data['destination_country'],
-                country_type=Country.CountryType.DESTINATION,
-                is_active=True
-            )
-            service_type = ServiceType.objects.get(
-                id=data['service_type'],
-                is_active=True
-            )
+            from shipping_rates.models import (Country, ServiceType,
+                                               ShippingZone)
             
-            # 2. Find shipping zone
+            origin = Country.objects.get(id=data['origin_country'])
+            destination = Country.objects.get(id=data['destination_country'])
+            service_type = ServiceType.objects.get(id=data['service_type'])
+            
+            # Find shipping zone
             zone = ShippingZone.objects.filter(
                 departure_countries=origin,
                 destination_countries=destination,
                 is_active=True
             ).first()
             
-            if not zone:
-                return Response(
-                    {
-                        'error': 'No shipping zone available',
-                        'details': {
-                            'origin': {'id': origin.id, 'name': origin.name},
-                            'destination': {'id': destination.id, 'name': destination.name}
-                        }
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # 3. Get weight-based rate
-            rate = WeightBasedRate.objects.filter(
-                zone=zone,
-                service_type=service_type,
-                min_weight__lte=data['weight'],
-                max_weight__gte=data['weight'],
-                is_active=True
-            ).first()
-            
-            if not rate:
-                return Response(
-                    {
-                        'error': 'No rate available for this weight',
-                        'details': {
-                            'weight': float(data['weight']),
-                            'service_type': service_type.name
-                        }
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # 4. Calculate volumetric weight
-            volume = data['length'] * data['width'] * data['height']
-            dim_factor = DimensionalFactor.objects.filter(
-                service_type=service_type,
-                is_active=True
-            ).first()
-            
-            volumetric_details = {
-                'dimensions': {
-                    'length': float(data['length']),
-                    'width': float(data['width']),
-                    'height': float(data['height']),
-                    'volume': float(volume)
-                },
-                'actual_weight': float(data['weight'])
-            }
-            
-            chargeable_weight = data['weight']
-            if dim_factor:
-                volumetric_weight = volume / dim_factor.factor
-                chargeable_weight = max(data['weight'], volumetric_weight)
-                volumetric_details.update({
-                    'dimensional_factor': dim_factor.factor,
-                    'volumetric_weight': float(volumetric_weight),
-                    'chargeable_weight': float(chargeable_weight),
-                    'weight_calculation': (
-                        'Volumetric' if volumetric_weight > data['weight'] 
-                        else 'Actual'
-                    )
-                })
-            
-            # 5. Calculate base cost
-            base_cost = (chargeable_weight * rate.per_kg_rate)
-            
-            # 6. Add service type price
-            service_price = service_type.price
-            
-            # 7. Get additional charges
-            additional_charges = []
-            total_additional = Decimal('0')
-            
-            for charge in AdditionalCharge.objects.filter(
-                zones=zone,
-                service_types=service_type,
-                is_active=True
-            ):
-                amount = (
-                    charge.value if charge.charge_type == 'FIXED'
-                    else (base_cost * charge.value / 100)
-                )
-                total_additional += amount
-                additional_charges.append({
-                    'name': charge.name,
-                    'type': charge.get_charge_type_display(),
-                    'value': float(charge.value),
-                    'amount': float(amount),
-                    'description': charge.description
-                })
-            
-            # 8. Calculate total cost
-            total_cost = base_cost + service_price + total_additional
-            
-            city_delivery_charges = 0
-            if request.data.get('city'):
-                city = City.objects.get(
-                    id=request.data.get('city'),
-                    is_active=True
-                )             
-                total_cost += city.delivery_charge
-                city_delivery_charges = city.delivery_charge
-            
-            extras = request.data.get('additional_charges')
-            extras_list = []
-            if request.data.get('additional_charges'):
-                               
-                for charge in extras:
-                    if (charge.get('charge_type') == 'FIXED'):
-                        charge_value = Decimal(charge.get('value')) * charge.get('quantity')
-                        total_cost += charge_value
-                        
-                
-                for charge in extras:
-                    if (charge.get('charge_type') == 'PERCENTAGE'):
-                        charge_value = (total_cost * Decimal(charge.get('value')) / 100) * charge.get('quantity')
-                        total_cost += charge_value
-                        
-                       
-            
-            # 9. Prepare detailed response
+            # Build response with route and service details
             response_data = {
                 'route': {
                     'origin': {
@@ -339,33 +242,46 @@ class ShippingRateCalculatorView(APIView):
                         'id': destination.id,
                         'name': destination.name,
                         'code': destination.code
-                    },
-                    'zone': {
-                        'id': zone.id,
-                        'name': zone.name
                     }
                 },
                 'service': {
                     'id': service_type.id,
                     'name': service_type.name,
                     'delivery_time': service_type.delivery_time,
-                    'price': float(service_price)
-                },
-                'weight_calculation': volumetric_details,
-                'rate_details': {
-                    'per_kg_rate': float(rate.per_kg_rate),
-                    'weight_charge': float(chargeable_weight * rate.per_kg_rate)
-                },
-                'city_delivery_charge': float(city_delivery_charges),
-                'extras': extras,
-                'cost_breakdown': {
-                    'base_cost': float(base_cost),
-                    'service_price': float(service_price),
-                    'additional_charges': additional_charges,
-                    'total_additional': float(total_additional),
-                    'total_cost': float(total_cost)
+                    'price': float(cost_breakdown['service_price'])
                 }
             }
+            
+            if zone:
+                response_data['route']['zone'] = {
+                    'id': zone.id,
+                    'name': zone.name
+                }
+            
+            # Include volumetric details if available
+            if 'volumetric' in cost_breakdown:
+                response_data['weight_calculation'] = cost_breakdown['volumetric']
+            
+            # Add rate details
+            if 'per_kg_rate' in cost_breakdown:
+                response_data['rate_details'] = {
+                    'per_kg_rate': float(cost_breakdown['per_kg_rate']),
+                    'weight_charge': float(cost_breakdown['weight_charge'])
+                }
+            
+            # Add cost breakdown to response
+            response_data['cost_breakdown'] = {
+                'weight_charge': float(cost_breakdown['weight_charge']),
+                'service_price': float(cost_breakdown['service_price']),
+                'city_delivery_charge': float(cost_breakdown['city_delivery_charge']),
+                'additional_charges': cost_breakdown['additional_charges'],
+                'extras': cost_breakdown['extras'],
+                'total_cost': float(cost_breakdown['total_cost'])
+            }
+            
+            # Add extras total if available
+            if 'extras_total' in cost_breakdown:
+                response_data['cost_breakdown']['extras_total'] = float(cost_breakdown['extras_total'])
             
             return Response(response_data)
             

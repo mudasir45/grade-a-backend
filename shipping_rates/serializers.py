@@ -92,14 +92,17 @@ class ShippingCalculatorSerializer(serializers.Serializer):
         max_length=9,
         help_text="Service type id"
     )
-    
     city = serializers.CharField(
         required=False,
-        help_text="City"
+        help_text="City id for delivery charges"
+    )
+    additional_charges = serializers.ListField(
+        required=False,
+        help_text="List of additional charges with quantities"
     )
     def validate(self, data):
         """
-        Validate that countries exist and are of correct type
+        Validate that countries exist and are of correct type, and that either weight or dimensions are provided
         """
         
         try:
@@ -132,15 +135,11 @@ class ShippingCalculatorSerializer(serializers.Serializer):
         except ServiceType.DoesNotExist:
             raise serializers.ValidationError({"service_type": "Invalid service type id"})
         
-        # try:
-        #     City.objects.get(
-        #             id=data['city'],
-        #             is_active=True
-        #         )
-        # except City.DoesNotExist:
-        #     raise serializers.ValidationError({"city": "Invalid city id"})
+        # Validate weight or dimensions
+        if not data.get('weight') and not all(key in data for key in ['length', 'width', 'height']):
+            raise serializers.ValidationError("Either weight or dimensions (length, width, height) must be provided")
         
-        return data 
+        return data
     
 class ExtrasSerializer(serializers.ModelSerializer):
     class Meta:
