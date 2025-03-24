@@ -11,8 +11,8 @@ router.register(r'status-locations', views.ShipmentStatusLocationViewSet, basena
 router.register(r'shipments', views.ShipmentRequestViewSet, basename='shipment')
 
 urlpatterns = [
-    path('', include(router.urls)),
     path('', views.ShipmentListCreateView.as_view(), name='shipment-list-create'),
+    path('viewsets/', include(router.urls)),
     path('<str:pk>/', views.ShipmentDetailView.as_view(), name='shipment-detail'),
     path(
         'track/<str:tracking_number>/',
@@ -38,6 +38,4 @@ urlpatterns = [
     # support ticket endpoints
     path('tickets/', views.SupportTicketListCreateView.as_view(), name='ticket-list-create'),
     path('tickets/<str:ticket_number>/', views.SupportTicketDetailView.as_view(), name='ticket-detail'),
-    
-    # Include router URLs
 ] 

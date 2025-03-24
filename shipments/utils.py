@@ -1,8 +1,12 @@
 import os
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
 from django.conf import settings
+# Import models
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 from reportlab.graphics import renderPDF
@@ -16,6 +20,318 @@ from reportlab.lib.units import inch, mm
 from reportlab.platypus import (Image, Paragraph, SimpleDocTemplate, Spacer,
                                 Table, TableStyle)
 
+# Don't import models at the module level to avoid circular imports
+# Instead, import them inside the functions where needed
+
+def format_decimal(value, decimal_places=2):
+    """Format a decimal value with commas as thousand separators and fixed decimal places"""
+    if value is None:
+        return "0.00"
+    try:
+        # Ensure value is a Decimal
+        if not isinstance(value, Decimal):
+            value = Decimal(str(value))
+        
+        # Format with commas and fixed decimal places
+        formatted = f"{value:,.{decimal_places}f}"
+        return formatted
+    except (ValueError, TypeError, InvalidOperation):
+        return "0.00"
+
+def calculate_shipping_cost(
+    sender_country_id, 
+    recipient_country_id, 
+    service_type_id, 
+    weight=None, 
+    dimensions=None, 
+    city_id=None, 
+    extras_data=None, 
+    additional_charges_data=None
+):
+    """
+    Calculate shipping cost based on provided parameters.
+    
+    Args:
+        sender_country_id (str): ID of the sender country
+        recipient_country_id (str): ID of the recipient country
+        service_type_id (str): ID of the service type
+        weight (Decimal, optional): Weight in kg. Defaults to None.
+        dimensions (dict, optional): Dictionary containing length, width, height in cm. 
+                                    Defaults to None. Example: {'length': 10, 'width': 20, 'height': 30}
+        city_id (str, optional): ID of the delivery city. Defaults to None.
+        extras_data (list, optional): List of extras with their quantities. 
+                                    Defaults to None. Example: [{'id': 'EXT123', 'quantity': 2}]
+        additional_charges_data (list, optional): List of additional charges. Defaults to None.
+    
+    Returns:
+        dict: Complete cost breakdown with all charges and totals
+    
+    Raises:
+        ValidationError: If required parameters are missing or invalid
+        ObjectDoesNotExist: If any of the required objects don't exist
+    """
+    # Import models here to avoid circular imports
+    from accounts.models import City
+    from shipping_rates.models import (AdditionalCharge, Country,
+                                       DimensionalFactor, Extras, ServiceType,
+                                       ShippingZone, WeightBasedRate)
+
+    # Initialize cost breakdown structure
+    cost_breakdown = {
+        'service_price': Decimal('0.00'),
+        'weight_charge': Decimal('0.00'),
+        'city_delivery_charge': Decimal('0.00'),
+        'additional_charges': [],
+        'extras': [],
+        'total_cost': Decimal('0.00'),
+        'errors': []
+    }
+    
+    try:
+        # Validate required parameters
+        if not sender_country_id or not recipient_country_id or not service_type_id:
+            raise ValidationError("Sender country, recipient country, and service type are required")
+            
+        if not weight and not dimensions:
+            raise ValidationError("Either weight or dimensions must be provided")
+            
+        # Get and validate countries
+        try:
+            sender_country = Country.objects.get(
+                id=sender_country_id,
+                country_type=Country.CountryType.DEPARTURE,
+                is_active=True
+            )
+        except Country.DoesNotExist:
+            raise ObjectDoesNotExist(f"Sender country with id {sender_country_id} does not exist or is not active")
+            
+        try:
+            recipient_country = Country.objects.get(
+                id=recipient_country_id,
+                country_type=Country.CountryType.DESTINATION,
+                is_active=True
+            )
+        except Country.DoesNotExist:
+            raise ObjectDoesNotExist(f"Recipient country with id {recipient_country_id} does not exist or is not active")
+            
+        # Get and validate service type
+        try:
+            service_type = ServiceType.objects.get(
+                id=service_type_id,
+                is_active=True
+            )
+        except ServiceType.DoesNotExist:
+            raise ObjectDoesNotExist(f"Service type with id {service_type_id} does not exist or is not active")
+            
+        # Find applicable shipping zone
+        shipping_zone = ShippingZone.objects.filter(
+            departure_countries=sender_country,
+            destination_countries=recipient_country,
+            is_active=True
+        ).first()
+            
+        if not shipping_zone:
+            raise ValidationError(f"No shipping zone found for route: {sender_country.name} to {recipient_country.name}")
+            
+        # Process weight and dimensions
+        if weight:
+            # Convert to Decimal if it's not already
+            weight = Decimal(str(weight)) if not isinstance(weight, Decimal) else weight
+        
+        # Calculate volumetric weight if dimensions are provided
+        volumetric_weight = None
+        chargeable_weight = weight if weight else Decimal('0')
+        
+        if dimensions:
+            try:
+                length = Decimal(str(dimensions.get('length', 0)))
+                width = Decimal(str(dimensions.get('width', 0)))
+                height = Decimal(str(dimensions.get('height', 0)))
+                
+                if length <= 0 or width <= 0 or height <= 0:
+                    raise ValidationError("Dimensions must be positive values")
+                    
+                volume = length * width * height
+                
+                # Get dimensional factor for service type
+                dim_factor = DimensionalFactor.objects.filter(
+                    service_type=service_type,
+                    is_active=True
+                ).first()
+                
+                if dim_factor:
+                    volumetric_weight = volume / Decimal(str(dim_factor.factor))
+                    
+                    # If volumetric weight is greater than actual weight, use volumetric weight
+                    if not weight or volumetric_weight > weight:
+                        chargeable_weight = volumetric_weight
+                    
+                    # Add volumetric details to cost breakdown
+                    cost_breakdown['volumetric'] = {
+                        'dimensions': {
+                            'length': float(length),
+                            'width': float(width),
+                            'height': float(height),
+                            'volume': float(volume)
+                        },
+                        'factor': dim_factor.factor,
+                        'volumetric_weight': float(volumetric_weight),
+                        'chargeable_weight': float(chargeable_weight),
+                        'used_weight_type': 'Volumetric' if volumetric_weight > (weight or 0) else 'Actual'
+                    }
+            except (TypeError, ValueError) as e:
+                cost_breakdown['errors'].append(f"Error calculating volumetric weight: {str(e)}")
+        
+        # Find applicable weight-based rate
+        if chargeable_weight:
+            try:
+                # Print debug information
+                print(f"DEBUG - Finding rate for: zone={shipping_zone.id}, service_type={service_type.id}, weight={chargeable_weight}")
+                
+                # Round the chargeable weight to 2 decimal places
+                chargeable_weight = round(chargeable_weight, 2)
+                
+                rate = WeightBasedRate.objects.filter(
+                    zone=shipping_zone,
+                    service_type=service_type,
+                    min_weight__lte=chargeable_weight,
+                    max_weight__gte=chargeable_weight,
+                    is_active=True
+                ).first()
+                
+                if not rate:
+                    # Log all available rates for debugging
+                    available_rates = WeightBasedRate.objects.filter(
+                        zone=shipping_zone,
+                        service_type=service_type,
+                        is_active=True
+                    )
+                    
+                    rate_info = []
+                    for r in available_rates:
+                        rate_info.append(f"Rate: min={r.min_weight}, max={r.max_weight}, per_kg={r.per_kg_rate}")
+                    
+                    rate_info_str = ", ".join(rate_info) if rate_info else "No rates found"
+                    print(f"DEBUG - Available rates: {rate_info_str}")
+                    
+                    raise ValidationError(f"No rate found for weight {chargeable_weight}kg and service {service_type.name}")
+                    
+                # Calculate base weight charge
+                weight_charge = chargeable_weight * rate.per_kg_rate
+                cost_breakdown['weight_charge'] = round(weight_charge, 2)
+                
+                # Add per kg rate for reference
+                cost_breakdown['per_kg_rate'] = rate.per_kg_rate
+            except Exception as e:
+                cost_breakdown['errors'].append(f"Error finding rate: {str(e)}")
+        
+        # Add service price
+        cost_breakdown['service_price'] = service_type.price
+        
+        # Add city delivery charge if city is provided
+        if city_id:
+            try:
+                city = City.objects.get(id=city_id, is_active=True)
+                cost_breakdown['city_delivery_charge'] = city.delivery_charge
+            except City.DoesNotExist:
+                cost_breakdown['errors'].append(f"City with id {city_id} does not exist or is not active")
+        
+        # Process additional charges
+        if shipping_zone and service_type:
+            try:
+                for charge in AdditionalCharge.objects.filter(
+                    zones=shipping_zone,
+                    service_types=service_type,
+                    is_active=True
+                ):
+                    charge_amount = Decimal('0.00')
+                    if charge.charge_type == 'FIXED':
+                        charge_amount = charge.value
+                    else:  # PERCENTAGE
+                        charge_amount = (cost_breakdown['weight_charge'] * charge.value / 100)
+                    
+                    charge_amount = round(charge_amount, 2)
+                    
+                    cost_breakdown['additional_charges'].append({
+                        'id': charge.id,
+                        'name': charge.name,
+                        'type': charge.charge_type,
+                        'value': float(charge.value),
+                        'amount': float(charge_amount)
+                    })
+            except Exception as e:
+                cost_breakdown['errors'].append(f"Error processing additional charges: {str(e)}")
+                
+        # Process extras if provided
+        if extras_data:
+            extras_total = Decimal('0.00')
+            try:
+                for extra_data in extras_data:
+                    if not isinstance(extra_data, dict):
+                        continue
+                        
+                    extra_id = extra_data.get('id')
+                    quantity = int(extra_data.get('quantity', 1))
+                    
+                    if not extra_id or quantity <= 0:
+                        continue
+                    
+                    try:
+                        extra = Extras.objects.get(id=extra_id, is_active=True)
+                        
+                        # Calculate charge
+                        extra_charge = Decimal('0.00')
+                        if extra.charge_type == 'FIXED':
+                            extra_charge = extra.value * quantity
+                        else:  # PERCENTAGE
+                            # Apply percentage to weight charge + service charge
+                            base_for_percentage = cost_breakdown['weight_charge'] + cost_breakdown['service_price']
+                            extra_charge = (base_for_percentage * extra.value / 100) * quantity
+                        
+                        extra_charge = round(extra_charge, 2)
+                        extras_total += extra_charge
+                        
+                        cost_breakdown['extras'].append({
+                            'id': extra.id,
+                            'name': extra.name,
+                            'charge_type': extra.charge_type,
+                            'value': float(extra.value),
+                            'quantity': quantity,
+                            'amount': float(extra_charge)
+                        })
+                    except Extras.DoesNotExist:
+                        cost_breakdown['errors'].append(f"Extra with id {extra_id} does not exist or is not active")
+                
+                # Add extras total to cost breakdown
+                cost_breakdown['extras_total'] = extras_total
+            except Exception as e:
+                cost_breakdown['errors'].append(f"Error processing extras: {str(e)}")
+                
+        # Calculate total cost
+        total_cost = (
+            cost_breakdown['weight_charge'] +
+            cost_breakdown['service_price'] +
+            cost_breakdown['city_delivery_charge']
+        )
+        
+        # Add additional charges to total
+        for charge in cost_breakdown['additional_charges']:
+            total_cost += Decimal(str(charge['amount']))
+            
+        # Add extras to total
+        if 'extras_total' in cost_breakdown:
+            total_cost += cost_breakdown['extras_total']
+        
+        cost_breakdown['total_cost'] = round(total_cost, 2)
+    
+    except ValidationError as e:
+        cost_breakdown['errors'].append(f"Validation error: {str(e)}")
+    except ObjectDoesNotExist as e:
+        cost_breakdown['errors'].append(f"Object not found: {str(e)}")
+    except Exception as e:
+        cost_breakdown['errors'].append(f"Unexpected error: {str(e)}")
+    
+    return cost_breakdown
 
 def create_qr_code(data, size=40*mm):
     """Create a QR code for the tracking number."""

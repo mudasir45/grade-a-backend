@@ -20,6 +20,8 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
     payment_method = serializers.ChoiceField(choices=ShipmentRequest.PaymentMethod.choices)
     payment_status = serializers.ChoiceField(choices=ShipmentRequest.PaymentStatus.choices)
     extras = serializers.SerializerMethodField()
+    cost_breakdown = serializers.JSONField(required=False, write_only=True)
+    additional_charges = serializers.ListField(required=False, write_only=True)
 
     class Meta:
         model = ShipmentRequest
@@ -46,6 +48,119 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
             }
             for item in shipment_extras
         ]
+
+    def to_internal_value(self, data):
+        """
+        Custom handling of raw data from requests,
+        especially for cost breakdown parsing.
+        """
+        data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
+        
+        # Get cost breakdown data if available
+        cost_breakdown = data_copy.get('cost_breakdown', {})
+        
+        # Extract values from cost_breakdown
+        if cost_breakdown:
+            if 'service_price' in cost_breakdown and 'service_charge' not in data_copy:
+                data_copy['service_charge'] = cost_breakdown['service_price']
+            
+            if 'weight_charge' in cost_breakdown and 'weight_charge' not in data_copy:
+                data_copy['weight_charge'] = cost_breakdown['weight_charge']
+                
+            if 'city_delivery_charge' in cost_breakdown and 'delivery_charge' not in data_copy:
+                data_copy['delivery_charge'] = cost_breakdown['city_delivery_charge']
+                
+            if 'total_cost' in cost_breakdown and 'total_cost' not in data_copy:
+                data_copy['total_cost'] = cost_breakdown['total_cost']
+        
+        # Set defaults for required decimal fields to prevent None errors
+        decimal_fields = ['base_rate', 'weight_charge', 'service_charge', 
+                          'total_additional_charges', 'extras_charges', 'total_cost', 'per_kg_rate']
+        for field in decimal_fields:
+            if field not in data_copy or not data_copy[field]:
+                data_copy[field] = '0.00'
+            else:
+                # Ensure decimal fields have max 2 decimal places
+                try:
+                    value = Decimal(str(data_copy[field]))
+                    data_copy[field] = str(round(value, 2))
+                except (TypeError, ValueError):
+                    data_copy[field] = '0.00'
+        
+        return super().to_internal_value(data_copy)
+
+    def update(self, instance, validated_data):
+        """Update the shipment with cost breakdown handling"""
+        # Extract extras data and cost breakdown
+        additional_charges = validated_data.pop('additional_charges', [])
+        cost_breakdown = validated_data.pop('cost_breakdown', None)
+        
+        # Process extras if present in cost_breakdown
+        extras_data = []
+        if cost_breakdown and isinstance(cost_breakdown, dict) and 'extras' in cost_breakdown:
+            extras_data = cost_breakdown.get('extras', [])
+        elif additional_charges:
+            extras_data = additional_charges
+            
+        # Process other cost_breakdown fields
+        if cost_breakdown and isinstance(cost_breakdown, dict):
+            # Handle service_price
+            if 'service_price' in cost_breakdown:
+                validated_data['service_charge'] = Decimal(str(cost_breakdown['service_price']))
+                
+            # Handle weight_charge
+            if 'weight_charge' in cost_breakdown:
+                validated_data['weight_charge'] = Decimal(str(cost_breakdown['weight_charge']))
+                
+            # Handle city_delivery_charge
+            if 'city_delivery_charge' in cost_breakdown:
+                validated_data['delivery_charge'] = Decimal(str(cost_breakdown['city_delivery_charge']))
+                
+            # Handle total_cost
+            if 'total_cost' in cost_breakdown:
+                validated_data['total_cost'] = Decimal(str(cost_breakdown['total_cost']))
+            
+        # Update ShipmentExtras if extras data is provided
+        if extras_data:
+            # Clear existing extras
+            ShipmentExtras.objects.filter(shipment=instance).delete()
+            
+            # Calculate extras charges from the extras data
+            extras_charges = Decimal('0.00')
+            from shipping_rates.models import Extras
+            
+            for extra_data in extras_data:
+                if not isinstance(extra_data, dict):
+                    continue
+                    
+                try:
+                    # Get or retrieve the Extras object
+                    extra_id = extra_data.get('id')
+                    if not extra_id:
+                        continue
+                        
+                    extra_obj = Extras.objects.get(id=extra_id)
+                    
+                    # Create the ShipmentExtras object
+                    quantity = int(extra_data.get('quantity', 1))
+                    ShipmentExtras.objects.create(
+                        shipment=instance,
+                        extra=extra_obj,
+                        quantity=quantity
+                    )
+                    
+                    # Add to extras_charges
+                    value = Decimal(str(extra_data.get('value', 0)))
+                    extras_charges += value * quantity
+                except (Extras.DoesNotExist, Exception) as e:
+                    print(f"Error creating shipment extra: {e}")
+                    continue
+            
+            # Update extras_charges in validated_data
+            validated_data['extras_charges'] = round(extras_charges, 2)
+        
+        # Update the instance with the validated data
+        return super().update(instance, validated_data)
 
 
 class ShipmentExtrasSerializer(serializers.ModelSerializer):

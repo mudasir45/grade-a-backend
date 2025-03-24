@@ -89,16 +89,13 @@ class ShipmentDetailView(APIView):
         """Update specific fields of a shipment"""
         shipment = self.get_object(pk)
         
-        # Only allow updating certain fields
-        # allowed_fields = {'notes', 'recipient_address', 'recipient_phone'}
-        # data = {
-        #     k: v for k, v in request.data.items() 
-        #     if k in allowed_fields
-        # }
+        # Process request data to handle cost breakdown
+        data = request.data.copy()
         
+        # Update serializer with processed data
         serializer = ShipmentRequestSerializer(
             shipment,
-            data=request.data,
+            data=data,
             partial=True
         )
         
@@ -445,25 +442,53 @@ class StaffShipmentCreateView(APIView):
     )
     def post(self, request, user_id=None):
         """Create a new shipment request for a specific user"""
-        data = request.data
-        data['staff'] = request.user.id
-        extras = []
-        print(data.get("additional_charges"))
-        for item in data.get('additional_charges'):
-            extras.append(item.get('id'))
-        data['extras'] = extras        
-        serializer = ShipmentCreateSerializer(data=request.data)
         try:
-            user = User.objects.get(id=user_id)
-        except User.DoesNotExist:
+            # Process the request data
+            data = request.data.copy()
+            data['staff'] = request.user.id
+            
+            # Get user
+            try:
+                user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+                
+            # Process cost breakdown if provided
+            if 'cost_breakdown' in data:
+                cost_breakdown = data['cost_breakdown']
+                
+                # Extract extras from cost breakdown if present
+                if isinstance(cost_breakdown, dict) and 'extras' in cost_breakdown:
+                    extras_data = cost_breakdown.get('extras', [])
+                    if extras_data:
+                        # Extract extra IDs for the serializer
+                        extras = []
+                        for item in extras_data:
+                            if isinstance(item, dict) and 'id' in item:
+                                extras.append(item['id'])
+                        data['extras'] = extras
+            # Handle legacy format with additional_charges
+            elif 'additional_charges' in data and isinstance(data['additional_charges'], list):
+                extras = []
+                for item in data['additional_charges']:
+                    if isinstance(item, dict) and 'id' in item:
+                        extras.append(item['id'])
+                data['extras'] = extras
+                
+            # Create and validate the serializer
+            serializer = ShipmentCreateSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save(user=user)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
             return Response(
-                {'error': 'User not found'},
-                status=status.HTTP_404_NOT_FOUND
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-        if serializer.is_valid():
-            serializer.save(user=user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     
 @extend_schema(tags=['shipments'])
@@ -516,9 +541,14 @@ class StaffShipmentManagementView(APIView):
             
         try:
             shipment = self.get_shipment(pk, request.user)
+            
+            # Process request data to handle cost breakdown
+            data = request.data.copy()
+            
+            # Update serializer with processed data
             serializer = ShipmentRequestSerializer(
                 shipment,
-                data=request.data
+                data=data
             )
             
             if serializer.is_valid():
@@ -528,11 +558,11 @@ class StaffShipmentManagementView(APIView):
                 
                 if old_status != updated_shipment.status:
                     updated_shipment.tracking_history.append({
-                        'status': updated_shipment.status,
+                        'status': updated_shipment.get_status_display(),
                         'location': updated_shipment.current_location,
                         'timestamp': timezone.now().isoformat(),
                         'description': f'Status updated by staff: {request.user.email}',
-                        'staff_id': request.user.id
+                        'staff_id': str(request.user.id)
                     })
                     updated_shipment.save()
                 
@@ -566,9 +596,14 @@ class StaffShipmentManagementView(APIView):
             
         try:
             shipment = self.get_shipment(pk, request.user)
+            
+            # Process request data to handle cost breakdown
+            data = request.data.copy()
+            
+            # Update serializer with processed data
             serializer = ShipmentRequestSerializer(
                 shipment,
-                data=request.data,
+                data=data,
                 partial=True
             )
             
@@ -579,11 +614,11 @@ class StaffShipmentManagementView(APIView):
                 
                 if 'status' in request.data and old_status != updated_shipment.status:
                     updated_shipment.tracking_history.append({
-                        'status': updated_shipment.status,
+                        'status': updated_shipment.get_status_display(),
                         'location': updated_shipment.current_location,
                         'timestamp': timezone.now().isoformat(),
                         'description': f'Status updated by staff: {request.user.email}',
-                        'staff_id': request.user.id
+                        'staff_id': str(request.user.id)
                     })
                     updated_shipment.save()
                 
