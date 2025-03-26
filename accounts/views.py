@@ -4,6 +4,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.db.models import Count, Q
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
+from django_filters import rest_framework as filters
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (OpenApiParameter, extend_schema,
                                    inline_serializer)
@@ -16,6 +17,9 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from accounts.models import City, Contact, DriverPayment, Store, UserCountry
 from buy4me.models import Buy4MeRequest
+from shipments.models import ShipmentRequest, SupportTicket
+from shipments.serializers import (ShipmentRequestSerializer,
+                                   SupportTicketSerializer)
 from shipping_rates.models import Country
 
 from .serializers import (CitySerializer, ContactSerializer,
@@ -429,3 +433,144 @@ class DriverPaymentView(APIView):
         serializer.save()
         return Response(serializer.data)
     
+
+class StaffAssociatedUsersView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        # check the user is staff
+        if not request.user.is_staff:
+            return Response(
+                {'error': 'Only staff members can access this endpoint'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # Get staff_id from query params or use current user's ID
+        staff_id = request.query_params.get('staff_id')
+        if not staff_id:
+            staff_id = request.user.id
+            
+        try:
+            # Get staff user
+            staff_user = User.objects.get(id=staff_id)
+            if not staff_user.is_staff:
+                return Response(
+                    {'error': 'The specified user is not a staff member'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Get unique users from shipments
+            users = User.objects.filter(shipments__staff=staff_user).distinct()
+            
+            # Annotate users with shipment counts
+            users = users.annotate(
+                total_shipments=Count('shipments', filter=Q(shipments__staff=staff_user)),
+                active_shipments=Count('shipments', filter=Q(shipments__staff=staff_user, shipments__status__in=['PENDING', 'PROCESSING', 'IN_TRANSIT']))
+            )
+            
+            # Serialize users
+            user_serializer = UserSerializer(users, many=True)
+            
+            return Response({
+                'message': f'Found {users.count()} users associated with staff member',
+                'users': user_serializer.data
+            })
+            
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Staff user not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            print(f"Error in StaffAssociatedUsersView: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )   
+        
+       
+
+class SupportTicketFilter(filters.FilterSet):
+    status = filters.CharFilter(field_name="status", lookup_expr='iexact')
+    category = filters.CharFilter(field_name="category", lookup_expr='iexact')
+    assigned_to = filters.NumberFilter(field_name="assigned_to")
+    created_at_min = filters.DateTimeFilter(field_name="created_at", lookup_expr='gte')
+    created_at_max = filters.DateTimeFilter(field_name="created_at", lookup_expr='lte')
+
+    class Meta:
+        model = SupportTicket
+        fields = ['status', 'category', 'assigned_to', 'created_at_min', 'created_at_max']
+
+class SupportTicketListCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        # Filtering support tickets based on parameters
+        tickets = SupportTicket.objects.filter(user=request.user)
+        
+        # Applying filters
+        filter_backends = (filters.DjangoFilterBackend,)
+        filterset = SupportTicketFilter(request.GET, queryset=tickets)
+        
+        if filterset.is_valid():
+            tickets = filterset.qs
+        else:
+            return Response(filterset.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = SupportTicketSerializer(tickets, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        # Creating a new ticket
+        serializer = SupportTicketSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user)  # Set the user automatically
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class SupportTicketDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, ticket_number):
+        try:
+            return SupportTicket.objects.get(ticket_number=ticket_number, user=self.request.user)
+        except SupportTicket.DoesNotExist:
+            return None
+
+    def get(self, request, ticket_number):
+        ticket = self.get_object(ticket_number)
+        if ticket is None:
+            return Response({'detail': 'Ticket not found or access denied.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = SupportTicketSerializer(ticket)
+        return Response(serializer.data)
+
+    def patch(self, request, ticket_number):
+        ticket = self.get_object(ticket_number)
+        if ticket is None:
+            return Response({'detail': 'Ticket not found or access denied.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = SupportTicketSerializer(ticket, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def put(self, request, ticket_number):
+        ticket = self.get_object(ticket_number)
+        if ticket is None:
+            return Response({'detail': 'Ticket not found or access denied.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = SupportTicketSerializer(ticket, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, ticket_number):
+        ticket = self.get_object(ticket_number)
+        if ticket is None:
+            return Response({'detail': 'Ticket not found or access denied.'}, status=status.HTTP_404_NOT_FOUND)
+
+        ticket.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

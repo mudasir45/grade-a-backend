@@ -181,7 +181,7 @@ class ShippingRateCalculatorView(APIView):
         
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
+            
         data = serializer.validated_data
         
         # Prepare dimensions if provided
@@ -249,6 +249,11 @@ class ShippingRateCalculatorView(APIView):
                     'name': service_type.name,
                     'delivery_time': service_type.delivery_time,
                     'price': float(cost_breakdown['service_price'])
+                },
+                'weight': {
+                    'actual': float(data.get('weight', 0) or 0),
+                    'volumetric': float(cost_breakdown.get('volumetric_weight', 0) or 0),
+                    'chargeable': float(cost_breakdown.get('chargeable_weight', 0) or 0)
                 }
             }
             

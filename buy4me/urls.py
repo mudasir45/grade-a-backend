@@ -1,5 +1,6 @@
+from django.urls import include, path
 from rest_framework_nested import routers
-from django.urls import path, include
+
 from . import views
 
 router = routers.DefaultRouter()
@@ -13,4 +14,5 @@ app_name = 'buy4me'
 urlpatterns = [
     path('', include(router.urls)),
     path('', include(requests_router.urls)),
+    path('active-request/', views.GetActiveBuy4MeRequest.as_view(), name='active-request'),
 ] 

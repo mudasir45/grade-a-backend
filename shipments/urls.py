@@ -35,7 +35,9 @@ urlpatterns = [
     # Message generator endpoint
     path('message/<str:pk>/', views.ShipmentMessageGeneratorView.as_view(), name='shipment-message'),
     
-    # support ticket endpoints
-    path('tickets/', views.SupportTicketListCreateView.as_view(), name='ticket-list-create'),
-    path('tickets/<str:ticket_number>/', views.SupportTicketDetailView.as_view(), name='ticket-detail'),
+    
+    
+    # User shipment history endpoint (staff only)
+    path('user-shipments/<str:user_id>/', views.UserShipmentHistoryView.as_view(), name='user-shipment-history'),
+    
 ] 

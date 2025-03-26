@@ -32,4 +32,9 @@ urlpatterns = [
     path('check-driver-user/', views.CheckDriverUserView.as_view(), name='check-driver-user'),
     path('cities/', views.CitiesView.as_view(), name='cities'),
     path('driver/payments/', views.DriverPaymentView.as_view(), name='driver-payments'),
+    path('staff-associated-users/', views.StaffAssociatedUsersView.as_view(), name='staff-associated-users'),
+    
+    # support ticket endpoints
+    path('tickets/', views.SupportTicketListCreateView.as_view(), name='ticket-list-create'),
+    path('tickets/<str:ticket_number>/', views.SupportTicketDetailView.as_view(), name='ticket-detail'),
 ] 

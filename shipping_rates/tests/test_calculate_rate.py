@@ -191,4 +191,29 @@ class ShippingRateCalculatorViewTest(TestCase):
         response = self.client.post(self.url, payload, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('service_type', response.data) 
+        self.assertIn('service_type', response.data)
+    
+    def test_calculate_rate_with_dimensions_no_weight(self):
+        """Test rate calculation with dimensions but no weight"""
+        payload = {
+            'origin_country': self.departure_country.id,
+            'destination_country': self.destination_country.id,
+            'service_type': self.service_type.id,
+            'weight': None,  # No weight provided
+            'length': 100,
+            'width': 100,
+            'height': 40
+        }
+        
+        response = self.client.post(self.url, payload, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Volumetric weight = 100*100*40/5000 = 80kg
+        # Weight charge = 80kg * $5/kg = $400
+        self.assertEqual(response.data['cost_breakdown']['weight_charge'], 400.0)
+        self.assertEqual(response.data['cost_breakdown']['total_cost'], 460.0)  # 50 + 400 + 10
+        
+        # Verify rate details are included
+        self.assertIn('rate_details', response.data)
+        self.assertEqual(response.data['rate_details']['per_kg_rate'], 5.0) 

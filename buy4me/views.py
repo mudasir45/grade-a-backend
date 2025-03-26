@@ -1,15 +1,14 @@
+from django.db.models import Prefetch
 from django.shortcuts import render
-from rest_framework import viewsets, status, permissions
+from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Prefetch
-from drf_spectacular.utils import extend_schema, OpenApiParameter
-from .models import Buy4MeRequest, Buy4MeItem
-from .serializers import (
-    Buy4MeRequestSerializer,
-    Buy4MeRequestCreateSerializer,
-    Buy4MeItemSerializer
-)
+from rest_framework.views import APIView
+
+from .models import Buy4MeItem, Buy4MeRequest
+from .serializers import (Buy4MeItemSerializer, Buy4MeRequestCreateSerializer,
+                          Buy4MeRequestSerializer)
 
 # Create your views here.
 
@@ -76,3 +75,14 @@ class Buy4MeItemViewSet(viewsets.ModelViewSet):
         )
         serializer.save(buy4me_request=buy4me_request)
         buy4me_request.calculate_total_cost()
+
+
+class GetActiveBuy4MeRequest(APIView):
+    def get(self, request):
+        active_request, created = Buy4MeRequest.objects.get_or_create(
+            user=request.user,
+            status=Buy4MeRequest.Status.DRAFT
+        )
+        serializer = Buy4MeRequestSerializer(active_request)
+        return Response(serializer.data)
+        

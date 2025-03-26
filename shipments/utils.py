@@ -71,22 +71,57 @@ def calculate_shipping_cost(
         'additional_charges': [],
         'extras': [],
         'total_cost': Decimal('0.00'),
-        'errors': []
+        'errors': [],
+        'volumetric_weight': Decimal('0.00'),
+        'chargeable_weight': Decimal('0.00')
     }
     
     try:
+        # First check if we have dimensions to calculate volumetric weight
+        volumetric_weight = None
+        if dimensions and all(key in dimensions for key in ['length', 'width', 'height']):
+            try:
+                # Get dimensional factor for the service type
+                service_type = ServiceType.objects.get(id=service_type_id, is_active=True)
+                dim_factor = DimensionalFactor.objects.filter(
+                    service_type=service_type,
+                    is_active=True
+                ).first()
+                
+                if dim_factor:
+                    # Calculate volumetric weight
+                    length = Decimal(str(dimensions.get('length', 0)))
+                    width = Decimal(str(dimensions.get('width', 0)))
+                    height = Decimal(str(dimensions.get('height', 0)))
+                    
+                    if all([length > 0, width > 0, height > 0]):
+                        volumetric_weight = (length * width * height) / Decimal(str(dim_factor.factor))
+                        cost_breakdown['volumetric_weight'] = volumetric_weight
+                        logger.info(f"Calculated volumetric weight: {volumetric_weight}kg")
+            except Exception as e:
+                logger.warning(f"Error calculating volumetric weight: {str(e)}")
+
         # Validate required parameters
-        if not all([sender_country_id, recipient_country_id, service_type_id, weight]):
+        if not all([sender_country_id, recipient_country_id, service_type_id]) or (weight is None and volumetric_weight is None):
             cost_breakdown['errors'].append("Missing required parameters")
             return cost_breakdown
         
-        # Convert weight to Decimal to ensure accurate calculations
-        try:
-            weight = Decimal(str(weight))
-        except (InvalidOperation, TypeError):
-            cost_breakdown['errors'].append("Invalid weight format")
-            return cost_breakdown
-            
+        # Use volumetric weight if it's greater than actual weight or if actual weight is not provided
+        if weight is not None:
+            try:
+                weight = Decimal(str(weight))
+            except (InvalidOperation, TypeError):
+                cost_breakdown['errors'].append("Invalid weight format")
+                return cost_breakdown
+        
+        # Determine the chargeable weight
+        chargeable_weight = weight if weight is not None else Decimal('0.00')
+        if volumetric_weight and (weight is None or volumetric_weight > chargeable_weight):
+            chargeable_weight = volumetric_weight
+            logger.info(f"Using volumetric weight: {volumetric_weight}kg instead of actual weight: {weight}kg")
+        
+        cost_breakdown['chargeable_weight'] = chargeable_weight
+        
         # Get the service type
         try:
             service_type = ServiceType.objects.get(id=service_type_id, is_active=True)
@@ -114,36 +149,6 @@ def calculate_shipping_cost(
                 
             # Use the first applicable shipping zone
             shipping_zone = shipping_zones.first()
-            
-            # Calculate actual vs volumetric weight
-            chargeable_weight = weight
-            
-            # Handle dimensional weight if dimensions are provided
-            if dimensions:
-                try:
-                    # Get dimensional factor for the service type
-                    dim_factor = DimensionalFactor.objects.filter(
-                        service_type=service_type,
-                        is_active=True
-                    ).first()
-                    
-                    if dim_factor:
-                        # Calculate volumetric weight
-                        length = Decimal(str(dimensions.get('length', 0)))
-                        width = Decimal(str(dimensions.get('width', 0)))
-                        height = Decimal(str(dimensions.get('height', 0)))
-                        
-                        if all([length > 0, width > 0, height > 0]):
-                            volumetric_weight = (length * width * height) / Decimal(str(dim_factor.factor))
-                            
-                            # Use the greater of actual vs volumetric weight
-                            if volumetric_weight > weight:
-                                chargeable_weight = volumetric_weight
-                                logger.info(f"Using volumetric weight: {volumetric_weight}kg instead of actual weight: {weight}kg")
-                except Exception as e:
-                    logger.warning(f"Error calculating volumetric weight: {str(e)}")
-                    # Continue with actual weight
-                    pass
             
             # Get applicable rate based on weight
             try:
@@ -356,6 +361,7 @@ def generate_shipment_receipt(shipment):
         spaceBefore=10,  # Reduced from 15
         spaceAfter=5   # Reduced from 10
     ))
+    
 
     # Create QR code with tracking URL
     tracking_url = f"https://www.gradeaexpress.com/tracking?tracking_number={shipment.tracking_number}"

@@ -13,6 +13,7 @@ from .models import (ShipmentExtras, ShipmentMessageTemplate, ShipmentRequest,
 
 class ShipmentRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField(read_only=True)
+    user_id = serializers.CharField(source='user.id', read_only=True)
     staff = serializers.StringRelatedField(read_only=True)
     driver = serializers.StringRelatedField(read_only=True)
     city = CitySerializer(read_only=True)
@@ -22,7 +23,6 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
     payment_method = serializers.ChoiceField(choices=ShipmentRequest.PaymentMethod.choices)
     payment_status = serializers.ChoiceField(choices=ShipmentRequest.PaymentStatus.choices)
     extras = serializers.SerializerMethodField()
-    cost_breakdown = serializers.JSONField(required=False, write_only=True)
     additional_charges = serializers.ListField(required=False, write_only=True)
 
     class Meta:
@@ -52,38 +52,9 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
 
     def to_internal_value(self, data):
         """
-        Custom handling of raw data from requests,
-        especially for cost breakdown parsing.
+        Custom handling of raw data from requests
         """
         data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
-        
-        # Get cost breakdown data if available
-        cost_breakdown = data_copy.get('cost_breakdown', {})
-        
-        # Extract values from cost_breakdown
-        if cost_breakdown:
-            if 'service_price' in cost_breakdown and 'service_charge' not in data_copy:
-                data_copy['service_charge'] = cost_breakdown['service_price']
-            
-            if 'weight_charge' in cost_breakdown and 'weight_charge' not in data_copy:
-                data_copy['weight_charge'] = cost_breakdown['weight_charge']
-                
-            if 'city_delivery_charge' in cost_breakdown and 'delivery_charge' not in data_copy:
-                data_copy['delivery_charge'] = cost_breakdown['city_delivery_charge']
-                
-            if 'total_cost' in cost_breakdown and 'total_cost' not in data_copy:
-                data_copy['total_cost'] = cost_breakdown['total_cost']
-                
-            if 'per_kg_rate' in cost_breakdown and 'per_kg_rate' not in data_copy:
-                data_copy['per_kg_rate'] = cost_breakdown['per_kg_rate']
-                
-            # Calculate and set total_additional_charges from the cost_breakdown
-            if 'additional_charges' in cost_breakdown and 'total_additional_charges' not in data_copy:
-                total_additional = Decimal('0.00')
-                for charge in cost_breakdown['additional_charges']:
-                    if isinstance(charge, dict) and 'amount' in charge:
-                        total_additional += Decimal(str(charge['amount']))
-                data_copy['total_additional_charges'] = str(round(total_additional, 2))
         
         # Set defaults for required decimal fields to prevent None errors
         decimal_fields = ['base_rate', 'weight_charge', 'service_charge', 
@@ -102,50 +73,12 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
         return super().to_internal_value(data_copy)
 
     def update(self, instance, validated_data):
-        """Update the shipment with cost breakdown handling"""
-        # Extract extras data and cost breakdown
+        """Update the shipment"""
+        # Extract extras data
         additional_charges = validated_data.pop('additional_charges', [])
-        cost_breakdown = validated_data.pop('cost_breakdown', None)
         
-        # Process extras if present in cost_breakdown
-        extras_data = []
-        if cost_breakdown and isinstance(cost_breakdown, dict) and 'extras' in cost_breakdown:
-            extras_data = cost_breakdown.get('extras', [])
-        elif additional_charges:
-            extras_data = additional_charges
-            
-        # Process other cost_breakdown fields
-        if cost_breakdown and isinstance(cost_breakdown, dict):
-            # Handle service_price
-            if 'service_price' in cost_breakdown:
-                validated_data['service_charge'] = Decimal(str(cost_breakdown['service_price']))
-                
-            # Handle weight_charge
-            if 'weight_charge' in cost_breakdown:
-                validated_data['weight_charge'] = Decimal(str(cost_breakdown['weight_charge']))
-                
-            # Handle city_delivery_charge
-            if 'city_delivery_charge' in cost_breakdown:
-                validated_data['delivery_charge'] = Decimal(str(cost_breakdown['city_delivery_charge']))
-                
-            # Handle per_kg_rate
-            if 'per_kg_rate' in cost_breakdown:
-                validated_data['per_kg_rate'] = Decimal(str(cost_breakdown['per_kg_rate']))
-                
-            # Handle additional_charges
-            if 'additional_charges' in cost_breakdown:
-                total_additional = Decimal('0.00')
-                for charge in cost_breakdown['additional_charges']:
-                    if isinstance(charge, dict) and 'amount' in charge:
-                        total_additional += Decimal(str(charge['amount']))
-                validated_data['total_additional_charges'] = total_additional
-                
-            # Handle total_cost
-            if 'total_cost' in cost_breakdown:
-                validated_data['total_cost'] = Decimal(str(cost_breakdown['total_cost']))
-            
         # Update ShipmentExtras if extras data is provided
-        if extras_data:
+        if additional_charges:
             # Clear existing extras
             ShipmentExtras.objects.filter(shipment=instance).delete()
             
@@ -153,7 +86,7 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
             extras_charges = Decimal('0.00')
             from shipping_rates.models import Extras
             
-            for extra_data in extras_data:
+            for extra_data in additional_charges:
                 if not isinstance(extra_data, dict):
                     continue
                     
@@ -404,7 +337,7 @@ class StatusUpdateSerializer(serializers.Serializer):
 
 
 class SupportTicketSerializer(serializers.ModelSerializer):
-    user = serializers.PrimaryKeyRelatedField(queryset=get_user_model().objects.all())
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
     assigned_to = serializers.PrimaryKeyRelatedField(queryset=get_user_model().objects.all(), required=False)
     shipment = serializers.PrimaryKeyRelatedField(queryset=ShipmentRequest.objects.all(), required=False)
 

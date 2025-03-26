@@ -67,7 +67,8 @@ class ShippingCalculatorSerializer(serializers.Serializer):
         required=False,
         max_digits=8, 
         decimal_places=2,
-        help_text="Weight in kg"
+        help_text="Weight in kg",
+        allow_null=True
     )
     length = serializers.DecimalField(
         required=False,
@@ -100,6 +101,7 @@ class ShippingCalculatorSerializer(serializers.Serializer):
         required=False,
         help_text="List of additional charges with quantities"
     )
+    
     def validate(self, data):
         """
         Validate that countries exist and are of correct type, and that either weight or dimensions are provided
@@ -135,9 +137,21 @@ class ShippingCalculatorSerializer(serializers.Serializer):
         except ServiceType.DoesNotExist:
             raise serializers.ValidationError({"service_type": "Invalid service type id"})
         
-        # Validate weight or dimensions
-        if not data.get('weight') and not all(key in data for key in ['length', 'width', 'height']):
-            raise serializers.ValidationError("Either weight or dimensions (length, width, height) must be provided")
+        # Check if dimensions are provided and valid
+        has_valid_dimensions = all(
+            data.get(key, 0) and float(data.get(key, 0)) > 0 
+            for key in ['length', 'width', 'height']
+        )
+        
+        # Check if weight is provided and valid
+        weight = data.get('weight')
+        has_valid_weight = weight is not None and float(weight) > 0
+        
+        # Either valid dimensions or valid weight must be provided
+        if not has_valid_dimensions and not has_valid_weight:
+            raise serializers.ValidationError(
+                "Either valid weight (> 0) or valid dimensions (all > 0) must be provided"
+            )
         
         return data
     
