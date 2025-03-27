@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'vendors',
     'shipping_rates',
     'payments',
+    'website_content',
 ]
 
 MIDDLEWARE = [
