@@ -142,6 +142,10 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
         default=ShipmentRequest.PaymentMethod.ONLINE
     )
     
+    # Allow blank email fields
+    sender_email = serializers.EmailField(max_length=254, allow_blank=True)
+    recipient_email = serializers.EmailField(max_length=254, allow_blank=True)
+    
     # Accept extras data directly
     additional_charges = serializers.ListField(required=False)
     extras_charges = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)

@@ -210,7 +210,7 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
 
     # Sender Information
     sender_name = models.CharField(max_length=255)
-    sender_email = models.EmailField(max_length=254)
+    sender_email = models.EmailField(max_length=254, blank=True)
     sender_phone = models.CharField(max_length=20)
     sender_address = models.TextField()
     sender_country = models.ForeignKey(
@@ -222,7 +222,7 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
 
     # Recipient Information
     recipient_name = models.CharField(max_length=255)
-    recipient_email = models.EmailField(max_length=254)
+    recipient_email = models.EmailField(max_length=254, blank=True)
     recipient_phone = models.CharField(max_length=20)
     recipient_address = models.TextField()
     recipient_country = models.ForeignKey(

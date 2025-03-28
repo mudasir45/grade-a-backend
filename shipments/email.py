@@ -1,8 +1,10 @@
+from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
-from django.conf import settings
+
 from .utils import generate_shipment_receipt
+
 
 def send_shipment_created_email(shipment):
     """
@@ -33,27 +35,29 @@ def send_shipment_created_email(shipment):
     admin_email.attach(f'shipment_{shipment.tracking_number}.pdf', receipt_pdf, 'application/pdf')
     admin_email.send()
     
-    # Send to sender
-    sender_email = EmailMultiAlternatives(
-        subject,
-        text_content,
-        from_email,
-        [shipment.sender_email]
-    )
-    sender_email.attach_alternative(html_content, "text/html")
-    sender_email.attach(f'shipment_{shipment.tracking_number}.pdf', receipt_pdf, 'application/pdf')
-    sender_email.send()
+    # Send to sender if email is provided
+    if shipment.sender_email:
+        sender_email = EmailMultiAlternatives(
+            subject,
+            text_content,
+            from_email,
+            [shipment.sender_email]
+        )
+        sender_email.attach_alternative(html_content, "text/html")
+        sender_email.attach(f'shipment_{shipment.tracking_number}.pdf', receipt_pdf, 'application/pdf')
+        sender_email.send()
     
-    # Send to recipient
-    recipient_email = EmailMultiAlternatives(
-        subject,
-        text_content,
-        from_email,
-        [shipment.recipient_email]
-    )
-    recipient_email.attach_alternative(html_content, "text/html")
-    recipient_email.attach(f'shipment_{shipment.tracking_number}.pdf', receipt_pdf, 'application/pdf')
-    recipient_email.send()
+    # Send to recipient if email is provided
+    if shipment.recipient_email:
+        recipient_email = EmailMultiAlternatives(
+            subject,
+            text_content,
+            from_email,
+            [shipment.recipient_email]
+        )
+        recipient_email.attach_alternative(html_content, "text/html")
+        recipient_email.attach(f'shipment_{shipment.tracking_number}.pdf', receipt_pdf, 'application/pdf')
+        recipient_email.send()
 
 def send_status_update_email(shipment):
     """
@@ -69,22 +73,24 @@ def send_status_update_email(shipment):
     subject = f'Shipment Status Update - {shipment.get_status_display()} - Tracking #{shipment.tracking_number}'
     from_email = settings.DEFAULT_FROM_EMAIL
     
-    # Send to sender
-    sender_email = EmailMultiAlternatives(
-        subject,
-        text_content,
-        from_email,
-        [shipment.sender_email]
-    )
-    sender_email.attach_alternative(html_content, "text/html")
-    sender_email.send()
+    # Send to sender if email is provided
+    if shipment.sender_email:
+        sender_email = EmailMultiAlternatives(
+            subject,
+            text_content,
+            from_email,
+            [shipment.sender_email]
+        )
+        sender_email.attach_alternative(html_content, "text/html")
+        sender_email.send()
     
-    # Send to recipient
-    recipient_email = EmailMultiAlternatives(
-        subject,
-        text_content,
-        from_email,
-        [shipment.recipient_email]
-    )
-    recipient_email.attach_alternative(html_content, "text/html")
-    recipient_email.send() 
+    # Send to recipient if email is provided
+    if shipment.recipient_email:
+        recipient_email = EmailMultiAlternatives(
+            subject,
+            text_content,
+            from_email,
+            [shipment.recipient_email]
+        )
+        recipient_email.attach_alternative(html_content, "text/html")
+        recipient_email.send() 
