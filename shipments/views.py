@@ -1,12 +1,23 @@
+import io
+import os
 import string
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Prefetch, Q
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from drf_spectacular.utils import OpenApiParameter, extend_schema
+from reportlab.graphics.barcode import code128
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -531,21 +542,45 @@ class StaffShipmentCreateView(APIView):
                     {'error': 'User not found'},
                     status=status.HTTP_404_NOT_FOUND
                 )
+
+            # Calculate shipping cost
+            cost_breakdown = calculate_shipping_cost(
+                sender_country_id=data.get('sender_country'),
+                recipient_country_id=data.get('recipient_country'),
+                service_type_id=data.get('service_type'),
+                weight=data.get('weight'),
+                dimensions={
+                    'length': data.get('length'),
+                    'width': data.get('width'),
+                    'height': data.get('height')
+                },
+                city_id=data.get('city'),
+                extras_data=data.get('additional_charges', [])
+            )
+
+            if cost_breakdown.get('errors'):
+                return Response(
+                    {'error': cost_breakdown['errors']},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Update data with calculated values
+            data.update({
+                'weight_charge': cost_breakdown.get('weight_charge', 0),
+                'total_additional_charges': sum(float(charge['amount']) for charge in cost_breakdown.get('additional_charges', [])),
+                'extras_charges': sum(float(extra['amount']) for extra in cost_breakdown.get('extras', [])),
+                'total_cost': cost_breakdown.get('total_cost', 0),
+                'per_kg_rate': cost_breakdown.get('per_kg_rate', 0),
+                'delivery_charge': cost_breakdown.get('city_delivery_charge', 0)
+            })
                 
-            # Process cost breakdown if provided
-            if 'cost_breakdown' in data:
-                cost_breakdown = data['cost_breakdown']
-                
-                # Extract extras from cost breakdown if present
-                if isinstance(cost_breakdown, dict) and 'extras' in cost_breakdown:
-                    extras_data = cost_breakdown.get('extras', [])
-                    if extras_data:
-                        # Extract extra IDs for the serializer
-                        extras = []
-                        for item in extras_data:
-                            if isinstance(item, dict) and 'id' in item:
-                                extras.append(item['id'])
-                        data['extras'] = extras
+            # Process extras if present in cost_breakdown
+            if 'extras' in cost_breakdown:
+                extras = []
+                for extra in cost_breakdown['extras']:
+                    if isinstance(extra, dict) and 'id' in extra:
+                        extras.append(extra['id'])
+                data['extras'] = extras
             # Handle legacy format with additional_charges
             elif 'additional_charges' in data and isinstance(data['additional_charges'], list):
                 extras = []
@@ -644,7 +679,7 @@ class StaffShipmentManagementView(APIView):
                     }
                 
                 # Extract extras data from request if provided
-                extras_data = data.get('additional_charges', None)
+                extras_data = data.get('extras', None)
                 
                 # Get current values for fields not in the request data
                 sender_country_id = data.get('sender_country', shipment.sender_country_id)
@@ -1216,5 +1251,279 @@ class UserShipmentHistoryView(APIView):
             return Response(
                 {"error": str(e)}, 
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+@extend_schema(tags=['shipments'])
+class StaffShipmentAWBView(APIView):
+    """
+    View for generating AWB (Air Waybill) for shipments.
+    Only accessible by staff members.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsStaffUser]
+    
+    def generate_awb(self, shipment):
+        """Generate AWB PDF for a shipment"""
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        
+        # Define common measurements
+        left_margin = 40
+        right_margin = width - 40
+        top_margin = height - 30
+        
+        # Draw border around the page
+        p.rect(left_margin - 5, 30, width - 70, height - 60)
+        
+        # Header section - moved company name lower
+        p.setFont("Helvetica-Bold", 22)
+        p.drawString(left_margin + 5, top_margin - 25, "Grade-A Express")  # Moved lower
+        p.setFont("Helvetica", 11)
+        p.drawString(left_margin + 5, top_margin - 45, "International Air Waybill")  # Adjusted
+        
+        # Draw AWB number box (top right) - adjusted alignment
+        p.rect(right_margin - 90, top_margin - 45, 80, 25)  # Adjusted box size and position
+        p.setFont("Helvetica-Bold", 14)  # Reduced font size
+        p.drawString(right_margin - 80, top_margin - 30, shipment.tracking_number[-7:])  # Better centered
+        
+        # Draw barcode
+        barcode_value = shipment.tracking_number
+        barcode = code128.Code128(barcode_value, barHeight=25*mm, barWidth=1.5)
+        barcode_width = 250
+        barcode_x = (width - barcode_width) / 2
+        barcode.drawOn(p, barcode_x, top_margin - 110)
+        
+        # Draw tracking number below barcode
+        p.setFont("Helvetica", 10)
+        p.drawString(barcode_x + 60, top_margin - 125, "Tracking Number:")
+        p.setFont("Helvetica-Bold", 11)
+        p.drawString(barcode_x + 140, top_margin - 125, barcode_value)
+        
+        # Start content area
+        content_top = top_margin - 160
+        box_height = 140
+        
+        # FROM and TO boxes side by side
+        box_width = (right_margin - left_margin - 10) / 2
+        
+        # FROM box
+        p.rect(left_margin, content_top - box_height, box_width, box_height)
+        # Title bar
+        p.setFillColor(colors.lightgrey)
+        p.rect(left_margin, content_top - 25, box_width, 25, fill=1)
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(left_margin + 10, content_top - 17, "FROM")
+        
+        # Sender details with better spacing and alignment
+        y = content_top - 45
+        field_pairs = [
+            ("Name:", shipment.sender_name),
+            ("Phone:", shipment.sender_phone),
+            ("Address:", shipment.sender_address),
+            ("Country:", shipment.sender_country.name)
+        ]
+        
+        for label, value in field_pairs:
+            p.setFont("Helvetica", 10)
+            p.drawString(left_margin + 15, y, label)
+            p.setFont("Helvetica-Bold", 10)
+            if label == "Address:":
+                y -= 15  # Move down for address value
+                for line in value.split('\n'):
+                    p.drawString(left_margin + 75, y, line.strip())
+                    y -= 15
+                y -= 5  # Extra space after address
+            else:
+                p.drawString(left_margin + 75, y, value)
+                y -= 25  # Space between fields
+        
+        # TO box
+        to_x = left_margin + box_width + 10
+        p.rect(to_x, content_top - box_height, box_width, box_height)
+        # Title bar
+        p.setFillColor(colors.lightgrey)
+        p.rect(to_x, content_top - 25, box_width, 25, fill=1)
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(to_x + 10, content_top - 17, "TO")
+        
+        # Recipient details with better spacing and alignment
+        y = content_top - 45
+        field_pairs = [
+            ("Name:", shipment.recipient_name),
+            ("Phone:", shipment.recipient_phone),
+            ("Address:", shipment.recipient_address),
+            ("Country:", shipment.recipient_country.name)
+        ]
+        
+        for label, value in field_pairs:
+            p.setFont("Helvetica", 10)
+            p.drawString(to_x + 15, y, label)
+            p.setFont("Helvetica-Bold", 10)
+            if label == "Address:":
+                y -= 15  # Move down for address value
+                for line in value.split('\n'):
+                    p.drawString(to_x + 75, y, line.strip())
+                    y -= 15
+                y -= 5  # Extra space after address
+            else:
+                p.drawString(to_x + 75, y, value)
+                y -= 25  # Space between fields
+        
+        # Shipment Details section - full width with increased height
+        details_top = content_top - box_height - 30  # Increased spacing
+        details_height = 100  # Increased height
+        p.rect(left_margin, details_top - details_height, right_margin - left_margin, details_height)
+        
+        # Title bar
+        p.setFillColor(colors.lightgrey)
+        p.rect(left_margin, details_top - 25, right_margin - left_margin, 25, fill=1)
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(left_margin + 10, details_top - 17, "SHIPMENT DETAILS")
+        
+        # Details content in two columns with better alignment and spacing
+        y = details_top - 45
+        col_width = (right_margin - left_margin - 40) / 2
+        
+        # Left column
+        x = left_margin + 15
+        details_left = [
+            ("Service:", shipment.service_type.name),
+            ("Package:", shipment.package_type),
+            ("Weight:", f"{shipment.weight} kg")
+        ]
+        
+        for label, value in details_left:
+            p.setFont("Helvetica", 10)
+            p.drawString(x, y, label)
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(x + 65, y, value)
+            y -= 25  # Increased spacing between lines
+        
+        # Right column
+        x = left_margin + col_width + 30
+        y = details_top - 45
+        details_right = [
+            ("Dimensions:", f"{shipment.length}×{shipment.width}×{shipment.height} cm"),
+            ("Payment:", shipment.get_payment_method_display())
+        ]
+        
+        for label, value in details_right:
+            p.setFont("Helvetica", 10)
+            p.drawString(x, y, label)
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(x + 75, y, value)
+            y -= 25  # Increased spacing between lines
+        
+        # Special Instructions section - adjusted spacing
+        instructions_top = details_top - details_height - 20
+        instructions_height = 60
+        p.rect(left_margin, instructions_top - instructions_height, 
+               right_margin - left_margin, instructions_height)
+        
+        # Title bar
+        p.setFillColor(colors.lightgrey)
+        p.rect(left_margin, instructions_top - 25, right_margin - left_margin, 25, fill=1)
+        p.setFillColor(colors.black)
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(left_margin + 10, instructions_top - 17, "SPECIAL INSTRUCTIONS")
+        
+        # Instructions content with better spacing
+        y = instructions_top - 45
+        instructions = []
+        if shipment.description:
+            instructions.append(f"Description: {shipment.description}")
+        if shipment.insurance_required:
+            instructions.append("Insurance Required")
+        if shipment.signature_required:
+            instructions.append("Signature Required")
+        
+        if instructions:
+            p.setFont("Helvetica", 10)
+            p.drawString(left_margin + 15, y, " | ".join(instructions))
+        else:
+            p.setFont("Helvetica", 10)
+            p.drawString(left_margin + 15, y, "None")
+        
+        # Footer with better alignment
+        footer_top = 60
+        p.setFillColor(colors.lightgrey)
+        p.rect(left_margin, footer_top - 30, right_margin - left_margin, 30, fill=1)
+        p.setFillColor(colors.black)
+        
+        # Footer content with consistent spacing
+        p.setFont("Helvetica-Bold", 8)
+        p.drawString(left_margin + 15, footer_top - 12, "COURIER COPY")
+        p.drawString(right_margin - 80, footer_top - 12, "RECEIVER COPY")
+        
+        # Timestamp and AWB with better spacing
+        timestamp = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
+        p.setFont("Helvetica", 7)
+        p.drawString(left_margin + 120, footer_top - 12, f"Generated: {timestamp}")
+        p.drawString(left_margin + 280, footer_top - 12, f"AWB: {shipment.tracking_number}")
+        
+        # Terms line with better alignment
+        p.setFont("Helvetica", 6)
+        p.drawString(left_margin + 15, footer_top - 25, 
+                    "By accepting this shipment, the sender agrees to Grade-A Express's terms of service. Additional charges may apply based on actual weight/dimensions.")
+        
+        # Close the PDF object
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+        return buffer
+    
+    def get(self, request, shipment_id):
+        """Generate AWB for a shipment"""
+        try:
+            # Get the shipment
+            shipment = get_object_or_404(
+                ShipmentRequest.objects.select_related(
+                    'sender_country',
+                    'recipient_country',
+                    'service_type'
+                ),
+                pk=shipment_id
+            )
+            
+            # Check if AWB already exists and delete it
+            if shipment.awb:
+                if os.path.exists(shipment.awb.path):
+                    os.remove(shipment.awb.path)
+            
+            # Generate new AWB
+            pdf_buffer = self.generate_awb(shipment)
+            
+            # Create filename
+            filename = f"awb_{shipment.tracking_number}.pdf"
+            
+            # Save the PDF to the shipment's AWB field
+            from django.core.files.base import ContentFile
+            shipment.awb.save(filename, ContentFile(pdf_buffer.getvalue()), save=True)
+            
+            # Return the URL to the PDF file
+            if request.query_params.get('download') == 'true':
+                # Return the file for direct download
+                response = FileResponse(
+                    open(shipment.awb.path, 'rb'),
+                    content_type='application/pdf'
+                )
+                response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                return response
+            else:
+                # Return the URL and other metadata
+                return Response({
+                    'awb_url': request.build_absolute_uri(shipment.awb.url),
+                    'filename': filename,
+                    'generated_at': timezone.now().isoformat(),
+                    'tracking_number': shipment.tracking_number
+                })
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

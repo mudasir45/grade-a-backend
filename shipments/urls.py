@@ -35,9 +35,9 @@ urlpatterns = [
     # Message generator endpoint
     path('message/<str:pk>/', views.ShipmentMessageGeneratorView.as_view(), name='shipment-message'),
     
-    
+    # AWB generation endpoint
+    path('generate-awb/<str:shipment_id>/', views.StaffShipmentAWBView.as_view(), name='generate-awb'),
     
     # User shipment history endpoint (staff only)
     path('user-shipments/<str:user_id>/', views.UserShipmentHistoryView.as_view(), name='user-shipment-history'),
-    
 ] 

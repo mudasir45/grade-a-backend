@@ -21,6 +21,14 @@ def shipment_receipt_path(instance, filename):
     return f'shipment_receipts/{instance.tracking_number}/{filename}'
 
 
+def shipment_awb_path(instance, filename):
+    """
+    Function to determine the upload path for AWB files.
+    The file will be uploaded to MEDIA_ROOT/awb/tracking_number/filename
+    """
+    return f'awb/{instance.tracking_number}/{filename}'
+
+
 class ShipmentStatusLocation(models.Model):
     """
     Model to define locations and descriptions for each shipment status transition.
@@ -208,6 +216,14 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         help_text=_('PDF receipt for the shipment')
     )
 
+    # AWB Document
+    awb = models.FileField(
+        upload_to=shipment_awb_path,
+        null=True,
+        blank=True,
+        help_text=_('PDF file of the Air Waybill')
+    )
+
     # Sender Information
     sender_name = models.CharField(max_length=255)
     sender_email = models.EmailField(max_length=254, blank=True)
@@ -311,22 +327,12 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
     )
 
     # Cost Information
-    base_rate = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        validators=[MinValueValidator(0)]
-    )
     per_kg_rate = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)]
     )
     weight_charge = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        validators=[MinValueValidator(0)]
-    )
-    service_charge = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)]
@@ -366,14 +372,12 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         """Calculate total cost including delivery charge and COD charge if applicable"""
         # Ensure all numeric fields have a valid value to prevent None errors
         weight_charge = self.weight_charge or Decimal('0')
-        service_charge = self.service_charge or Decimal('0')
         total_additional_charges = self.total_additional_charges or Decimal('0')
         extras_charges = self.extras_charges or Decimal('0')
         delivery_charge = self.delivery_charge or Decimal('0')
         
         subtotal = (
             weight_charge + 
-            service_charge +
             total_additional_charges +
             extras_charges
         )
@@ -394,15 +398,11 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
             self.tracking_number = generate_tracking_number()
         
         # Ensure all numeric fields have valid values to prevent None errors
-        if self.base_rate is None:
-            self.base_rate = Decimal('0')
         if self.per_kg_rate is None:
             self.per_kg_rate = Decimal('0')
         if self.weight_charge is None:
             # Only calculate weight_charge if it's not already set
             self.weight_charge = self.weight * self.per_kg_rate
-        if self.service_charge is None:
-            self.service_charge = Decimal('0')
         if self.total_additional_charges is None:
             self.total_additional_charges = Decimal('0')
         if self.extras_charges is None:
@@ -438,7 +438,10 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         # Generate receipt if it's a new shipment or status has changed
         if is_new or self.tracker.has_changed('status'):
             # Generate PDF receipt
-            pdf_content = generate_shipment_receipt(self)
+            pdf_buffer = generate_shipment_receipt(self)
+            
+            # Convert BytesIO to bytes
+            pdf_content = pdf_buffer.getvalue()
             
             # Save the PDF
             filename = f'shipment_receipt_{self.tracking_number}.pdf'

@@ -170,8 +170,8 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         ('Cost Information', {
             'fields': (
                 'cost_breakdown_display',
-                ('base_rate', 'per_kg_rate', 'weight_charge'),
-                ('service_charge', 'total_additional_charges', 'extras_charges'),
+                ('per_kg_rate', 'weight_charge'),
+                ('total_additional_charges', 'extras_charges'),
                 'delivery_charge', 'cod_amount', 'total_cost'
             ),
             'classes': ('wide',)
@@ -317,17 +317,14 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
     def total_cost_display(self, obj):
         # Calculate subtotal
         subtotal = (
-            obj.base_rate + 
-            obj.weight_charge + 
-            obj.service_charge +
-            obj.total_additional_charges
+            obj.weight_charge +
+            obj.total_additional_charges +
+            obj.extras_charges
         )
         
         # Build detailed breakdown
         breakdown = f"""
-            Base Rate: ${obj.base_rate:.2f}<br>
             Weight Charge: ${obj.weight_charge:.2f}<br>
-            Service Charge: ${obj.service_charge:.2f}<br>
             Additional Charges: ${obj.total_additional_charges:.2f}<br>
             Extras Charges: ${obj.extras_charges:.2f}<br>
             <b>Subtotal: ${subtotal:.2f}</b><br>
@@ -465,13 +462,12 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         """Display a formatted cost breakdown table"""
         # Calculate subtotal
         subtotal = (
-            obj.base_rate + 
-            obj.weight_charge + 
-            obj.service_charge +
-            obj.total_additional_charges
+            obj.weight_charge +
+            obj.total_additional_charges +
+            obj.extras_charges
         )
         
-        # Build HTML table using a single string without f-strings
+        # Format the main table beginning with professional styling
         html = """
         <style>
             .cost-table {
@@ -523,29 +519,14 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         </style>
         <table class="cost-table">
             <tr>
-                <th style="width: 70%%">Cost Component</th>
-                <th style="width: 30%%">Amount</th>
-            </tr>
-            <tr>
-                <td>Base Rate</td>
-                <td>$%.2f</td>
+                <th style="width: 70%">Cost Component</th>
+                <th style="width: 30%">Amount</th>
             </tr>
             <tr>
                 <td>Weight Charge (%.2f kg × $%.2f/kg = $%.2f)</td>
                 <td>$%.2f</td>
             </tr>
-            <tr>
-                <td>Service Charge</td>
-                <td>$%.2f</td>
-            </tr>
-        """
-        
-        # Format the main table beginning
-        html = html % (
-            obj.base_rate,
-            obj.weight, obj.per_kg_rate, obj.weight_charge, obj.weight_charge,
-            obj.service_charge,
-        )
+        """ % (obj.weight, obj.per_kg_rate, obj.weight_charge, obj.weight_charge)
         
         # Get additional charges from related models
         from shipping_rates.models import AdditionalCharge, ShippingZone
@@ -608,14 +589,6 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
                     <td>$%.2f</td>
                 </tr>
                 """ % obj.total_additional_charges
-        else:
-            # No additional charges
-            html += """
-            <tr>
-                <td>Additional Charges</td>
-                <td>$0.00</td>
-            </tr>
-            """
         
         # Get extras details
         extras = list(obj.shipmentextras_set.select_related('extra').all())
@@ -637,9 +610,7 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
                 if extra.charge_type == 'FIXED':
                     extra_charge = extra.value * quantity
                 else:  # PERCENTAGE
-                    # Calculate percentage of weight_charge + service_charge
-                    base_amount = obj.weight_charge + obj.service_charge
-                    extra_charge = (base_amount * extra.value / 100) * quantity
+                    extra_charge = (obj.weight_charge * extra.value / 100) * quantity
                 
                 extra_charge = round(extra_charge, 2)
                 
@@ -656,9 +627,9 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
             html += """
             <tr>
                 <td>Extras Charges</td>
-                <td>$%.2f</td>
+                <td>$0.00</td>
             </tr>
-            """ % obj.extras_charges
+            """
         
         # Add subtotal
         html += """

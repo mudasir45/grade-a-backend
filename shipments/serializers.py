@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from accounts.models import City
 from accounts.serializers import CitySerializer, UserSerializer
 from shipping_rates.models import (Country, DimensionalFactor, Extras,
                                    ServiceType, ShippingZone, WeightBasedRate)
@@ -16,7 +17,7 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
     user_id = serializers.CharField(source='user.id', read_only=True)
     staff = serializers.StringRelatedField(read_only=True)
     driver = serializers.StringRelatedField(read_only=True)
-    city = CitySerializer(read_only=True)
+    city = serializers.PrimaryKeyRelatedField(queryset=City.objects.all(), required=False, allow_null=True)
     cod_amount = serializers.DecimalField(read_only=True, max_digits=10, decimal_places=2)
     per_kg_rate = serializers.DecimalField(max_digits=10, decimal_places=2)
     total_additional_charges = serializers.DecimalField(max_digits=10, decimal_places=2)
@@ -29,10 +30,9 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
         model = ShipmentRequest
         fields = '__all__'
         read_only_fields = [
-            'user', 'staff', 'driver', 'city', 'tracking_number', 'status',
+            'user', 'staff', 'driver', 'tracking_number', 'status',
             'current_location', 'estimated_delivery',
-            'tracking_history', 'base_rate',
-            'weight_charge', 'total_cost', 'created_at', 'updated_at',
+            'tracking_history', 'weight_charge', 'total_cost', 'created_at', 'updated_at',
             'cod_amount', 'payment_status', 'payment_date',
             'transaction_id', 'delivery_charge'
         ]
@@ -57,8 +57,8 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
         data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
         
         # Set defaults for required decimal fields to prevent None errors
-        decimal_fields = ['base_rate', 'weight_charge', 'service_charge', 
-                          'total_additional_charges', 'extras_charges', 'total_cost', 'per_kg_rate']
+        decimal_fields = ['weight_charge', 'total_additional_charges', 
+                          'extras_charges', 'total_cost', 'per_kg_rate']
         for field in decimal_fields:
             if field not in data_copy or not data_copy[field]:
                 data_copy[field] = '0.00'
@@ -149,9 +149,7 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
     # Accept extras data directly
     additional_charges = serializers.ListField(required=False)
     extras_charges = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
-    base_rate = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     weight_charge = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
-    service_charge = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     total_additional_charges = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     total_cost = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     per_kg_rate = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
@@ -166,8 +164,8 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
             'recipient_address', 'recipient_country', 'city', 
             'additional_charges', 'extras_charges',
             'package_type', 'weight', 'length', 'width', 'height',
-            'description', 'declared_value', 'base_rate', 'weight_charge',
-            'service_charge', 'total_additional_charges', 'total_cost',
+            'description', 'declared_value', 'weight_charge',
+            'total_additional_charges', 'total_cost',
             'service_type', 'insurance_required', 'signature_required',
             'payment_method', 'notes', 'cost_breakdown', 'per_kg_rate'
         ]
@@ -190,9 +188,6 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
         
         # Extract values from cost_breakdown
         if cost_breakdown:
-            if 'service_price' in cost_breakdown and 'service_charge' not in data_copy:
-                data_copy['service_charge'] = cost_breakdown['service_price']
-            
             if 'weight_charge' in cost_breakdown and 'weight_charge' not in data_copy:
                 data_copy['weight_charge'] = cost_breakdown['weight_charge']
                 
@@ -203,8 +198,8 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
                 data_copy['total_cost'] = cost_breakdown['total_cost']
         
         # Set defaults for required decimal fields to prevent None errors
-        decimal_fields = ['base_rate', 'weight_charge', 'service_charge', 
-                          'total_additional_charges', 'extras_charges', 'total_cost', 'per_kg_rate']
+        decimal_fields = ['weight_charge', 'total_additional_charges', 
+                          'extras_charges', 'total_cost', 'per_kg_rate']
         for field in decimal_fields:
             if field not in data_copy or not data_copy[field]:
                 data_copy[field] = '0.00'
@@ -242,8 +237,8 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
             validated_data['extras_charges'] = round(extras_charges, 2)
             
         # Ensure all decimal fields are rounded to 2 decimal places
-        decimal_fields = ['base_rate', 'weight_charge', 'service_charge', 
-                          'total_additional_charges', 'total_cost', 'per_kg_rate']
+        decimal_fields = ['weight_charge', 'total_additional_charges', 
+                          'total_cost', 'per_kg_rate']
         for field in decimal_fields:
             if field in validated_data:
                 if validated_data[field] is None:

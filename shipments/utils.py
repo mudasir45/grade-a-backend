@@ -180,7 +180,7 @@ def calculate_shipping_cost(
             return cost_breakdown
         
         # Add service price
-        cost_breakdown['service_price'] = service_type.price
+        # cost_breakdown['service_price'] = service_type.price
         
         # Add city delivery charge if city is provided
         if city_id:
@@ -237,8 +237,13 @@ def calculate_shipping_cost(
                 
         # Process extras if provided
         if extras_data:
-            extras_total = Decimal('0.00')
+            # Split extras into fixed and percentage types
+            fixed_extras = []
+            percentage_extras = []
+            fixed_extras_total = Decimal('0.00')
+            
             try:
+                # First, categorize extras into fixed and percentage types
                 for extra_data in extras_data:
                     if not isinstance(extra_data, dict):
                         continue
@@ -252,31 +257,79 @@ def calculate_shipping_cost(
                     try:
                         extra = Extras.objects.get(id=extra_id, is_active=True)
                         
-                        # Calculate charge
-                        extra_charge = Decimal('0.00')
+                        # Store the extra info for later processing
                         if extra.charge_type == 'FIXED':
-                            extra_charge = extra.value * quantity
+                            fixed_extras.append({
+                                'extra': extra,
+                                'quantity': quantity
+                            })
                         else:  # PERCENTAGE
-                            # Apply percentage to weight charge + service charge
-                            base_for_percentage = cost_breakdown['weight_charge'] + cost_breakdown['service_price']
-                            extra_charge = (base_for_percentage * extra.value / 100) * quantity
-                        
-                        extra_charge = round(extra_charge, 2)
-                        extras_total += extra_charge
-                        
-                        cost_breakdown['extras'].append({
-                            'id': extra.id,
-                            'name': extra.name,
-                            'charge_type': extra.charge_type,
-                            'value': float(extra.value),
-                            'quantity': quantity,
-                            'amount': float(extra_charge)
-                        })
+                            percentage_extras.append({
+                                'extra': extra,
+                                'quantity': quantity
+                            })
                     except Extras.DoesNotExist:
                         cost_breakdown['errors'].append(f"Extra with id {extra_id} does not exist or is not active")
                 
-                # Add extras total to cost breakdown
+                # Process fixed extras first
+                for item in fixed_extras:
+                    extra = item['extra']
+                    quantity = item['quantity']
+                    
+                    # Calculate fixed charge
+                    extra_charge = extra.value * quantity
+                    extra_charge = round(extra_charge, 2)
+                    fixed_extras_total += extra_charge
+                    
+                    # Add to cost breakdown
+                    cost_breakdown['extras'].append({
+                        'id': extra.id,
+                        'name': extra.name,
+                        'charge_type': extra.charge_type,
+                        'value': float(extra.value),
+                        'quantity': quantity,
+                        'amount': float(extra_charge)
+                    })
+                
+                # Calculate subtotal including fixed extras
+                subtotal = (
+                    cost_breakdown['weight_charge'] +
+                    cost_breakdown['service_price'] +
+                    cost_breakdown['city_delivery_charge']
+                )
+                
+                # Add additional charges to subtotal
+                for charge in cost_breakdown['additional_charges']:
+                    subtotal += Decimal(str(charge['amount']))
+                
+                # Add fixed extras to subtotal
+                subtotal += fixed_extras_total
+                
+                # Now process percentage extras based on the subtotal
+                percentage_extras_total = Decimal('0.00')
+                for item in percentage_extras:
+                    extra = item['extra']
+                    quantity = item['quantity']
+                    
+                    # Calculate percentage charge based on subtotal
+                    extra_charge = (subtotal * extra.value / 100) * quantity
+                    extra_charge = round(extra_charge, 2)
+                    percentage_extras_total += extra_charge
+                    
+                    # Add to cost breakdown
+                    cost_breakdown['extras'].append({
+                        'id': extra.id,
+                        'name': extra.name,
+                        'charge_type': extra.charge_type,
+                        'value': float(extra.value),
+                        'quantity': quantity,
+                        'amount': float(extra_charge)
+                    })
+                
+                # Calculate final extras total
+                extras_total = fixed_extras_total + percentage_extras_total
                 cost_breakdown['extras_total'] = extras_total
+                
             except Exception as e:
                 cost_breakdown['errors'].append(f"Error processing extras: {str(e)}")
                 
@@ -337,46 +390,45 @@ def generate_shipment_receipt(shipment):
     styles.add(ParagraphStyle(
         name='CompanyName',
         parent=styles['Heading1'],
-        fontSize=20,  # Reduced from 24
+        fontSize=24,
         textColor=colors.HexColor('#1a237e'),
-        spaceAfter=5,  # Reduced from 10
+        spaceAfter=10,
         alignment=TA_LEFT
     ))
     
     styles.add(ParagraphStyle(
         name='ReceiptTitle',
         parent=styles['Heading2'],
-        fontSize=12,  # Reduced from 14
+        fontSize=16,
         textColor=colors.HexColor('#424242'),
-        spaceBefore=10,  # Reduced from 20
-        spaceAfter=10,  # Reduced from 20
+        spaceBefore=20,
+        spaceAfter=20,
         alignment=TA_RIGHT
     ))
 
     styles.add(ParagraphStyle(
         name='SectionHeader',
         parent=styles['Heading3'],
-        fontSize=10,  # Reduced from 12
+        fontSize=12,
         textColor=colors.HexColor('#1a237e'),
-        spaceBefore=10,  # Reduced from 15
-        spaceAfter=5   # Reduced from 10
+        spaceBefore=15,
+        spaceAfter=10
     ))
-    
 
     # Create QR code with tracking URL
     tracking_url = f"https://www.gradeaexpress.com/tracking?tracking_number={shipment.tracking_number}"
-    qr_code = create_qr_code(data=tracking_url, size=30*mm)  # Reduced from 40mm
+    qr_code = create_qr_code(data=tracking_url, size=30*mm)
 
-    # Header with company info, receipt details, and QR code
+    # Header with company info and receipt details
     header_data = [
         [Paragraph("GRADE-A EXPRESS", styles['CompanyName']),
          Paragraph("SHIPPING RECEIPT", styles['ReceiptTitle']),
          qr_code],
-        ["", f"Receipt Date: {shipment.created_at.strftime('%d/%m/%Y')}", ""],  # Changed date format
-        ["", f"Tracking #: {shipment.tracking_number}", "Scan to track"]  # Shortened "Number" to "#"
+        ["", f"Receipt Date: {shipment.created_at.strftime('%d/%m/%Y')}", ""],
+        ["", "", "Scan to track"]
     ]
 
-    header_table = Table(header_data, colWidths=[3.5*inch, 3*inch, 1.2*inch])  # Adjusted widths
+    header_table = Table(header_data, colWidths=[3.5*inch, 3*inch, 1.2*inch])
     header_table.setStyle(TableStyle([
         ('ALIGN', (0, 0), (0, -1), 'LEFT'),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
@@ -384,49 +436,28 @@ def generate_shipment_receipt(shipment):
         ('VALIGN', (2, 0), (2, 0), 'TOP'),
         ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#424242')),
         ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),  # Reduced from 10
-        ('FONTSIZE', (2, 2), (2, 2), 7),  # Reduced from 8
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),  # Reduced from 20
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('FONTSIZE', (2, 2), (2, 2), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 20),
     ]))
     elements.append(header_table)
-    elements.append(Spacer(1, 10))  # Reduced from 20
+    elements.append(Spacer(1, 20))
 
-    # Status box with background color
-    status_style = ParagraphStyle(
-        'StatusStyle',
+    # Tracking number in a colored box
+    tracking_style = ParagraphStyle(
+        'TrackingStyle',
         parent=styles['Normal'],
-        fontSize=11,  # Reduced from 12
+        fontSize=12,
         textColor=colors.white,
         alignment=TA_CENTER,
         backColor=colors.HexColor('#1a237e'),
-        borderPadding=5  # Reduced from 10
+        borderPadding=10,
+        borderRadius=5
     )
-    elements.append(Paragraph(f"SHIPMENT STATUS: {shipment.get_status_display()}", status_style))
-    elements.append(Spacer(1, 10))  # Reduced from 20
+    elements.append(Paragraph(f"TRACKING NUMBER: {shipment.tracking_number}", tracking_style))
+    elements.append(Spacer(1, 20))
 
-    # Tracking info with timeline style
-    status_info = [
-        ['Current Location:', shipment.current_location or 'N/A'],
-        ['Est. Delivery:', shipment.estimated_delivery.strftime('%d/%m/%Y') if shipment.estimated_delivery else 'TBD']
-    ]
-
-    status_table = Table(status_info, colWidths=[1.3*inch, 6.4*inch])  # Adjusted widths
-    status_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f5f5f5')),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#424242')),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),  # Reduced from 10
-        ('TOPPADDING', (0, 0), (-1, -1), 6),  # Reduced from 8
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),  # Reduced from 8
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),  # Reduced from 10
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),  # Reduced from 10
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
-    ]))
-    elements.append(status_table)
-    elements.append(Spacer(1, 10))  # Reduced from 20
-
-    # Shipping details with better styling
+    # Shipping details
     shipping_data = [
         [Paragraph('FROM:', styles['SectionHeader']), 
          Paragraph('TO:', styles['SectionHeader'])],
@@ -442,18 +473,18 @@ def generate_shipment_receipt(shipment):
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#424242')),
         ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),  # Reduced from 10
-        ('TOPPADDING', (0, 1), (-1, 1), 8),  # Reduced from 10
-        ('BOTTOMPADDING', (0, 1), (-1, 1), 8),  # Reduced from 10
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),  # Reduced from 10
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),  # Reduced from 10
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('TOPPADDING', (0, 1), (-1, 1), 8),
+        ('BOTTOMPADDING', (0, 1), (-1, 1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
         ('BACKGROUND', (0, 1), (0, 1), colors.HexColor('#f8f9fa')),
         ('BACKGROUND', (1, 1), (1, 1), colors.HexColor('#f8f9fa')),
         ('BOX', (0, 1), (0, 1), 1, colors.HexColor('#dddddd')),
         ('BOX', (1, 1), (1, 1), 1, colors.HexColor('#dddddd')),
     ]))
     elements.append(shipping_table)
-    elements.append(Spacer(1, 10))  # Reduced from 20
+    elements.append(Spacer(1, 20))
 
     # Package details
     elements.append(Paragraph('SHIPMENT DETAILS', styles['SectionHeader']))
@@ -470,62 +501,48 @@ def generate_shipment_receipt(shipment):
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#424242')),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),  # Reduced from 10
-        ('TOPPADDING', (0, 0), (-1, -1), 6),  # Reduced from 8
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),  # Reduced from 8
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),  # Reduced from 10
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),  # Reduced from 10
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
         ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#dddddd')),
     ]))
     elements.append(package_table)
-    elements.append(Spacer(1, 10))  # Reduced from 20
+    elements.append(Spacer(1, 20))
 
     # Cost breakdown
     elements.append(Paragraph('COST BREAKDOWN', styles['SectionHeader']))
     
-    # Calculate subtotal (before COD and delivery charges)
-    subtotal = (
-        shipment.base_rate + 
-        shipment.weight_charge + 
-        shipment.service_charge +
-        shipment.total_additional_charges
-    )
-    
     cost_data = [
-        ['Base Rate:', f"${shipment.base_rate:,.2f}"],
         ['Weight Charge:', f"${shipment.weight_charge:,.2f}"],
-        ['Service Charge:', f"${shipment.service_charge:,.2f}"],
         ['Additional Charges:', f"${shipment.total_additional_charges:,.2f}"],
-        ['Subtotal:', f"${subtotal:,.2f}"],
+        ['Extras:', f"${shipment.extras_charges:,.2f}"],
+        ['Delivery Charge:', f"${shipment.delivery_charge:,.2f}"]
     ]
-    
+
     # Add COD charge if applicable
     if shipment.payment_method == 'COD' and shipment.cod_amount > 0:
         cost_data.append(['COD Charge (5%):', f"${shipment.cod_amount:,.2f}"])
-    
-    # Add delivery charge
-    cost_data.append(['Delivery Charge:', f"${shipment.delivery_charge:,.2f}"])
-    
+
     # Add total cost as the final row
     cost_data.append(['Total Cost:', f"${shipment.total_cost:,.2f}"])
 
     cost_table = Table(cost_data, colWidths=[5.7*inch, 2*inch])
     cost_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -3), colors.HexColor('#f9f9f9')),  # All rows except subtotal, delivery charge and total
-        ('BACKGROUND', (0, -3), (-1, -3), colors.HexColor('#f0f0f0')),  # Subtotal row
+        ('BACKGROUND', (0, 0), (-1, -2), colors.HexColor('#f9f9f9')),  # All rows except total
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#1a237e')),  # Total row
         ('TEXTCOLOR', (0, 0), (-1, -2), colors.HexColor('#424242')),
         ('TEXTCOLOR', (0, -1), (-1, -1), colors.white),
         ('ALIGN', (0, 0), (0, -1), 'LEFT'),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('FONTNAME', (0, 0), (-1, -4), 'Helvetica'),  # Regular font for base items
-        ('FONTNAME', (0, -3), (-1, -2), 'Helvetica-Bold'),  # Bold for subtotal and delivery charge
+        ('FONTNAME', (0, 0), (-1, -2), 'Helvetica'),  # Regular font for base items
         ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),  # Bold for total
-        ('FONTSIZE', (0, 0), (-1, -1), 9),  # Reduced from 10
-        ('TOPPADDING', (0, 0), (-1, -1), 6),  # Reduced from 8
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),  # Reduced from 8
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),  # Reduced from 10
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),  # Reduced from 10
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
         ('GRID', (0, 0), (-1, -2), 0.5, colors.HexColor('#dddddd')),
         ('BOX', (0, -1), (-1, -1), 1, colors.white),
     ]))
@@ -536,23 +553,21 @@ def generate_shipment_receipt(shipment):
     footer_style = ParagraphStyle(
         'Footer',
         parent=styles['Normal'],
-        fontSize=8,  # Reduced from 9
+        fontSize=9,
         textColor=colors.HexColor('#666666'),
         alignment=TA_CENTER,
-        spaceBefore=15,  # Reduced from 30
+        spaceBefore=30,
         borderColor=colors.HexColor('#dddddd'),
         borderWidth=1,
-        borderPadding=5,  # Reduced from 10
-        borderRadius=3  # Reduced from 5
+        borderPadding=10,
+        borderRadius=5
     )
     elements.append(Paragraph(footer_text, footer_style))
 
     # Build PDF
     doc.build(elements)
-    pdf = buffer.getvalue()
-    buffer.close()
-    
-    return pdf 
+    buffer.seek(0)
+    return buffer
 
 def generate_tracking_number():
     """Generate a unique tracking number for shipments"""

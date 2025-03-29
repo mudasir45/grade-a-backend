@@ -324,9 +324,11 @@ class CurrencyConversionAPIView(APIView):
                 )
 
             # Convert from the source currency to MYR, then MYR to the target currency.
-            # Calculation: (amount * from_currency.conversion_rate) / to_currency.conversion_rate
-            amount_in_myr = from_amount * from_currency.conversion_rate
-            converted_amount = amount_in_myr / to_currency.conversion_rate
+            # If rate is defined as: 1 MYR = X Currency, then:
+            # 1. Convert source amount to MYR by dividing by from_currency.conversion_rate
+            # 2. Convert MYR to target currency by multiplying by to_currency.conversion_rate
+            amount_in_myr = from_amount / from_currency.conversion_rate
+            converted_amount = amount_in_myr * to_currency.conversion_rate
 
             return Response({
                 "from_currency": from_currency_code,

@@ -11,7 +11,10 @@ def send_shipment_created_email(shipment):
     Send shipment creation notification to all parties (admin, sender, and recipient)
     """
     # Generate receipt PDF
-    receipt_pdf = generate_shipment_receipt(shipment)
+    pdf_buffer = generate_shipment_receipt(shipment)
+    
+    # Convert BytesIO to bytes
+    pdf_content = pdf_buffer.getvalue()
     
     # Common context for email template
     context = {'shipment': shipment}
@@ -32,7 +35,7 @@ def send_shipment_created_email(shipment):
         [settings.ADMIN_EMAIL]
     )
     admin_email.attach_alternative(html_content, "text/html")
-    admin_email.attach(f'shipment_{shipment.tracking_number}.pdf', receipt_pdf, 'application/pdf')
+    admin_email.attach(f'shipment_{shipment.tracking_number}.pdf', pdf_content, 'application/pdf')
     admin_email.send()
     
     # Send to sender if email is provided
@@ -44,7 +47,7 @@ def send_shipment_created_email(shipment):
             [shipment.sender_email]
         )
         sender_email.attach_alternative(html_content, "text/html")
-        sender_email.attach(f'shipment_{shipment.tracking_number}.pdf', receipt_pdf, 'application/pdf')
+        sender_email.attach(f'shipment_{shipment.tracking_number}.pdf', pdf_content, 'application/pdf')
         sender_email.send()
     
     # Send to recipient if email is provided
@@ -56,7 +59,7 @@ def send_shipment_created_email(shipment):
             [shipment.recipient_email]
         )
         recipient_email.attach_alternative(html_content, "text/html")
-        recipient_email.attach(f'shipment_{shipment.tracking_number}.pdf', receipt_pdf, 'application/pdf')
+        recipient_email.attach(f'shipment_{shipment.tracking_number}.pdf', pdf_content, 'application/pdf')
         recipient_email.send()
 
 def send_status_update_email(shipment):
