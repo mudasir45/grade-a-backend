@@ -3,8 +3,12 @@ from decimal import Decimal
 from django.apps import apps
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.core.mail import send_mail
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 from django.utils.translation import gettext_lazy as _
@@ -530,6 +534,11 @@ class SupportTicket(models.Model):
         related_name='support_tickets',
         help_text=_("Related shipment if applicable")
     )
+    admin_reply = models.TextField(
+        null=True,
+        blank=True,
+        help_text=_("Admin reply to the ticket")
+    )
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -558,6 +567,15 @@ class SupportTicket(models.Model):
         return f"Ticket #{self.ticket_number} - {self.subject}"
     
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        old_status = None
+        old_admin_reply = None
+        
+        if not is_new:
+            old_instance = SupportTicket.objects.get(pk=self.pk)
+            old_status = old_instance.status
+            old_admin_reply = old_instance.admin_reply
+            
         if not self.ticket_number:
             # Generate unique ticket number
             prefix = 'TKT'
@@ -569,9 +587,90 @@ class SupportTicket(models.Model):
             self.resolved_at = timezone.now()
         
         super().save(*args, **kwargs)
+        
+        # Send emails after saving
+        if is_new:
+            self.send_creation_emails()
+        else:
+            if old_status != self.status:
+                self.send_status_update_email()
+            if old_admin_reply != self.admin_reply and self.admin_reply:
+                self.send_admin_reply_email()
+    
+    def send_creation_emails(self):
+        """Send emails when ticket is created"""
+        # Email to user
+        context = {
+            'ticket': self,
+            'user': self.user,
+            'support_email': settings.SUPPORT_EMAIL
+        }
+        
+        user_subject = f'Support Ticket #{self.ticket_number} Created - {self.subject}'
+        user_message = render_to_string('emails/support/ticket_created_user.html', context)
+        
+        send_mail(
+            subject=user_subject,
+            message=user_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[self.user.email],
+            html_message=user_message
+        )
+        
+        # Email to admin
+        admin_subject = f'New Support Ticket #{self.ticket_number} - {self.subject}'
+        admin_message = render_to_string('emails/support/ticket_created_admin.html', context)
+        
+        send_mail(
+            subject=admin_subject,
+            message=admin_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[settings.SUPPORT_EMAIL],
+            html_message=admin_message
+        )
+    
+    def send_status_update_email(self):
+        """Send email when ticket status is updated"""
+        context = {
+            'ticket': self,
+            'user': self.user,
+            'new_status': self.get_status_display(),
+            'support_email': settings.SUPPORT_EMAIL
+        }
+        
+        subject = f'Support Ticket #{self.ticket_number} Status Updated'
+        message = render_to_string('emails/support/ticket_status_updated.html', context)
+        
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[self.user.email],
+            html_message=message
+        )
+    
+    def send_admin_reply_email(self):
+        """Send email when admin replies to the ticket"""
+        context = {
+            'ticket': self,
+            'user': self.user,
+            'admin_reply': self.admin_reply,
+            'support_email': settings.SUPPORT_EMAIL
+        }
+        
+        subject = f'New Reply to Support Ticket #{self.ticket_number}'
+        message = render_to_string('emails/support/ticket_admin_reply.html', context)
+        
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[self.user.email],
+            html_message=message
+        )
     
     def add_comment(self, user, comment):
-        """Add a comment to the ticket"""
+        """Add a comment to the ticket and notify relevant parties"""
         self.comments.append({
             'user': str(user),
             'comment': comment,
@@ -579,6 +678,33 @@ class SupportTicket(models.Model):
             'is_staff': getattr(user, 'is_staff', False)
         })
         self.save()
+        
+        # Send email notification about new comment
+        context = {
+            'ticket': self,
+            'comment': comment,
+            'commenter': user,
+            'support_email': settings.SUPPORT_EMAIL
+        }
+        
+        # If staff commented, notify user
+        if getattr(user, 'is_staff', False):
+            subject = f'New Staff Comment on Ticket #{self.ticket_number}'
+            message = render_to_string('emails/support/ticket_staff_comment.html', context)
+            recipient = self.user.email
+        # If user commented, notify admin
+        else:
+            subject = f'New User Comment on Ticket #{self.ticket_number}'
+            message = render_to_string('emails/support/ticket_user_comment.html', context)
+            recipient = settings.SUPPORT_EMAIL
+        
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            html_message=message
+        )
 
 
 class ShipmentMessageTemplate(models.Model):

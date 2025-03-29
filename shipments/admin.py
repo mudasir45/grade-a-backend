@@ -716,7 +716,8 @@ class SupportTicketAdmin(admin.ModelAdmin):
                 'subject',
                 'message',
                 'category',
-                'status'
+                'status',
+                'admin_reply'
             )
         }),
         ('User & Assignment', {

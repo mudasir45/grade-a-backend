@@ -342,7 +342,7 @@ class SupportTicketSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SupportTicket
-        fields = ['ticket_number', 'subject', 'message', 'category', 'status', 'user', 'assigned_to', 'shipment', 'created_at', 'updated_at', 'resolved_at', 'comments']
+        fields = ['ticket_number', 'admin_reply', 'subject', 'message', 'category', 'status', 'user', 'assigned_to', 'shipment', 'created_at', 'updated_at', 'resolved_at', 'comments']
         read_only_fields = ['ticket_number', 'created_at', 'updated_at', 'resolved_at']
 
     def create(self, validated_data):

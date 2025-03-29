@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        color: #333;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .header {
+        background-color: #f8f9fa;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      .content {
+        padding: 20px;
+      }
+      .footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        font-size: 12px;
+        color: #666;
+      }
+      .comment {
+        background-color: #f8f9fa;
+        padding: 20px;
+        margin: 20px 0;
+        border-left: 4px solid #dc3545;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h2>New User Comment</h2>
+        <p>Ticket #{{ ticket.ticket_number }}</p>
+      </div>
+
+      <div class="content">
+        <p>
+          A user has added a new comment to support ticket #{{
+          ticket.ticket_number }}.
+        </p>
+
+        <div class="comment">
+          <h3>User Comment:</h3>
+          <p>{{ comment }}</p>
+          <p>
+            <small
+              >Added by: {{ commenter.get_full_name|default:commenter.email
+              }}</small
+            >
+          </p>
+        </div>
+
+        <h3>Ticket Details:</h3>
+        <ul>
+          <li><strong>Ticket Number:</strong> {{ ticket.ticket_number }}</li>
+          <li><strong>Subject:</strong> {{ ticket.subject }}</li>
+          <li><strong>Category:</strong> {{ ticket.get_category_display }}</li>
+          <li><strong>Status:</strong> {{ ticket.get_status_display }}</li>
+          <li>
+            <strong>Created:</strong> {{ ticket.created_at|date:"F j, Y, g:i a"
+            }}
+          </li>
+          <li>
+            <strong>Last Updated:</strong> {{ ticket.updated_at|date:"F j, Y,
+            g:i a" }}
+          </li>
+        </ul>
+
+        <div class="user-info">
+          <h3>User Information:</h3>
+          <ul>
+            <li>
+              <strong>Name:</strong> {{ commenter.get_full_name|default:"Not
+              provided" }}
+            </li>
+            <li><strong>Email:</strong> {{ commenter.email }}</li>
+            <li>
+              <strong>Phone:</strong> {{ commenter.phone_number|default:"Not
+              provided" }}
+            </li>
+            {% if ticket.shipment %}
+            <li>
+              <strong>Related Shipment:</strong> {{
+              ticket.shipment.tracking_number }}
+            </li>
+            {% endif %}
+          </ul>
+        </div>
+
+        <p>Please review and respond to this comment as needed.</p>
+      </div>
+
+      <div class="footer">
+        <p>This is an automated message from the support ticket system.</p>
+      </div>
+    </div>
+  </body>
+</html>

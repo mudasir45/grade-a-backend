@@ -16,11 +16,23 @@
       .header {
         background-color: #f8f9fa;
         padding: 20px;
-        text-align: center;
-        border-radius: 5px;
+        margin-bottom: 20px;
       }
       .content {
-        padding: 20px 0;
+        padding: 20px;
+      }
+      .footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        font-size: 12px;
+        color: #666;
+      }
+      .status {
+        font-size: 18px;
+        font-weight: bold;
+        color: #007bff;
+        margin: 20px 0;
       }
       .ticket-info {
         background-color: #f8f9fa;
@@ -57,44 +69,35 @@
         background-color: #6c757d;
         color: white;
       }
-      .footer {
-        text-align: center;
-        padding-top: 20px;
-        border-top: 1px solid #eee;
-        color: #666;
-      }
     </style>
   </head>
   <body>
     <div class="container">
       <div class="header">
         <h2>Support Ticket Status Updated</h2>
+        <p>Ticket #{{ ticket.ticket_number }}</p>
       </div>
 
       <div class="content">
         <p>Dear {{ user.get_full_name|default:user.email }},</p>
 
-        <p>There has been an update to your support ticket.</p>
+        <p>The status of your support ticket has been updated.</p>
 
-        <div class="status-update">
-          <h3>Status Update</h3>
-          <p>Your ticket status has been updated to:</p>
-          <p>
-            <span class="status-badge status-{{ status|lower }}">
-              {{ status }}
-            </span>
-          </p>
-        </div>
+        <div class="status">New Status: {{ new_status }}</div>
 
         <div class="ticket-info">
           <h3>Ticket Details:</h3>
-          <p><strong>Ticket Number:</strong> {{ ticket.ticket_number }}</p>
-          <p><strong>Subject:</strong> {{ ticket.subject }}</p>
-          <p><strong>Category:</strong> {{ ticket.get_category_display }}</p>
-          <p>
-            <strong>Last Updated:</strong> {{ ticket.updated_at|date:"F j, Y,
-            g:i a" }}
-          </p>
+          <ul>
+            <li><strong>Ticket Number:</strong> {{ ticket.ticket_number }}</li>
+            <li><strong>Subject:</strong> {{ ticket.subject }}</li>
+            <li>
+              <strong>Category:</strong> {{ ticket.get_category_display }}
+            </li>
+            <li>
+              <strong>Updated:</strong> {{ ticket.updated_at|date:"F j, Y, g:i
+              a" }}
+            </li>
+          </ul>
           {% if ticket.assigned_to %}
           <p>
             <strong>Assigned To:</strong> {{
@@ -105,29 +108,34 @@
 
         {% if ticket.status == 'RESOLVED' %}
         <p>
-          If you're satisfied with the resolution, no further action is needed.
-          However, if you need additional assistance, please feel free to reply
-          to this email or create a new support ticket.
+          Your ticket has been marked as resolved. If you're satisfied with the
+          resolution, no further action is needed. If you need additional
+          assistance, you can reply to reopen the ticket.
         </p>
-        {% else %}
+        {% elif ticket.status == 'IN_PROGRESS' %}
         <p>
-          Our support team is working on your request. We'll keep you updated on
-          any progress.
+          Our support team is currently working on your ticket. We'll update you
+          once there's more information available.
+        </p>
+        {% elif ticket.status == 'CLOSED' %}
+        <p>
+          This ticket has been closed. If you need further assistance, please
+          create a new support ticket.
         </p>
         {% endif %}
 
         <p>
-          You can reply to this email if you need to provide additional
-          information or have any questions.
+          You can reply to this email if you have any questions about this
+          update.
         </p>
       </div>
 
       <div class="footer">
+        <p>For immediate assistance, contact us at: {{ support_email }}</p>
         <p>
-          If you need immediate assistance, please contact us at {{
-          support_email }}
+          This is an automated message. Please do not reply directly to this
+          email.
         </p>
-        <p>Thank you for your patience!</p>
       </div>
     </div>
   </body>

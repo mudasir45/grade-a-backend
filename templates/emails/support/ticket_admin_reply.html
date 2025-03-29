@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <meta charset="utf-8" />
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -28,12 +27,18 @@
         font-size: 12px;
         color: #666;
       }
+      .reply {
+        background-color: #f8f9fa;
+        padding: 20px;
+        margin: 20px 0;
+        border-left: 4px solid #007bff;
+      }
     </style>
   </head>
   <body>
     <div class="container">
       <div class="header">
-        <h2>Support Ticket Created</h2>
+        <h2>Support Team Response</h2>
         <p>Ticket #{{ ticket.ticket_number }}</p>
       </div>
 
@@ -41,41 +46,46 @@
         <p>Dear {{ user.get_full_name|default:user.email }},</p>
 
         <p>
-          Your support ticket has been successfully created. Here are the
-          details:
+          Our support team has responded to your ticket regarding "{{
+          ticket.subject }}".
         </p>
 
+        <div class="reply">
+          <h3>Support Team's Response:</h3>
+          <p>{{ admin_reply }}</p>
+        </div>
+
+        <h3>Ticket Details:</h3>
         <ul>
           <li><strong>Ticket Number:</strong> {{ ticket.ticket_number }}</li>
           <li><strong>Subject:</strong> {{ ticket.subject }}</li>
           <li><strong>Category:</strong> {{ ticket.get_category_display }}</li>
           <li><strong>Status:</strong> {{ ticket.get_status_display }}</li>
           <li>
-            <strong>Created:</strong> {{ ticket.created_at|date:"F j, Y, g:i a"
+            <strong>Updated:</strong> {{ ticket.updated_at|date:"F j, Y, g:i a"
             }}
           </li>
         </ul>
 
-        <h3>Your Message:</h3>
-        <p>{{ ticket.message }}</p>
-
         <p>
-          We will review your ticket and respond as soon as possible. You will
-          receive email notifications when there are updates to your ticket.
+          If you need to provide additional information or have any questions
+          about this response, please reply to this email.
         </p>
 
+        {% if ticket.status == 'RESOLVED' %}
         <p>
-          If you need to add any information to your ticket, you can reply to
-          this email or contact our support team.
+          If this response resolves your issue, no further action is needed. If
+          you need additional assistance, you can reply to reopen the ticket.
         </p>
+        {% endif %}
       </div>
 
       <div class="footer">
+        <p>For immediate assistance, contact us at: {{ support_email }}</p>
         <p>
           This is an automated message. Please do not reply directly to this
           email.
         </p>
-        <p>For support, contact us at: {{ support_email }}</p>
       </div>
     </div>
   </body>

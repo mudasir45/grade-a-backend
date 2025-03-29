@@ -206,10 +206,14 @@ class UserViewSet(viewsets.ModelViewSet):
             status='DELIVERED'
         ).count()
         
+        # total Support Tickets
+        support_tickets_count = SupportTicket.objects.filter(user=request.user).count()
+        
         return Response({
             'active_shipments': active_count,
             'in_transit': in_transit_count,
-            'completed': completed_count
+            'completed': completed_count,
+            'support_tickets': support_tickets_count
         })
 
     @extend_schema(
