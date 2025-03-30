@@ -17,7 +17,7 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
     user_id = serializers.CharField(source='user.id', read_only=True)
     staff = serializers.StringRelatedField(read_only=True)
     driver = serializers.StringRelatedField(read_only=True)
-    city = serializers.PrimaryKeyRelatedField(queryset=City.objects.all(), required=False, allow_null=True)
+    city = CitySerializer(read_only=True)
     cod_amount = serializers.DecimalField(read_only=True, max_digits=10, decimal_places=2)
     per_kg_rate = serializers.DecimalField(max_digits=10, decimal_places=2)
     total_additional_charges = serializers.DecimalField(max_digits=10, decimal_places=2)

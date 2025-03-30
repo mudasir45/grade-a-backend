@@ -159,16 +159,30 @@ def handle_shipment_payment_method(sender, instance, created, **kwargs):
     Handle payment method and extra charges for shipment
     """
     if instance.payment_method == ShipmentRequest.PaymentMethod.COD:
-        instance.cod_amount = instance.total_cost * Decimal("0.05")
-
-        # Save only the `cod_amount` field to avoid re-triggering the signal
-        ShipmentRequest.objects.filter(id=instance.id).update(cod_amount=instance.cod_amount)
-
+        # Calculate COD amount (5% of current total cost)
+        cod_amount = round(instance.total_cost * Decimal("0.05"), 2)
+        
+        # Only update if the COD amount has changed
+        if instance.cod_amount != cod_amount:
+            instance.cod_amount = cod_amount
+            # Add COD amount to total cost
+            instance.total_cost = instance.total_cost + cod_amount
+            # Save both cod_amount and total_cost to avoid re-triggering the signal
+            ShipmentRequest.objects.filter(id=instance.id).update(
+                cod_amount=cod_amount,
+                total_cost=instance.total_cost
+            )
     elif instance.payment_method == ShipmentRequest.PaymentMethod.ONLINE:
-        instance.cod_amount = Decimal("0")
-
-        # Save only `cod_amount` to prevent recursion
-        ShipmentRequest.objects.filter(id=instance.id).update(cod_amount=instance.cod_amount)
+        # Remove COD amount from total cost for online payments
+        if instance.cod_amount != Decimal("0"):
+            # Subtract the current COD amount from total cost
+            instance.total_cost = instance.total_cost - instance.cod_amount
+            instance.cod_amount = Decimal("0")
+            # Save both cod_amount and total_cost to prevent recursion
+            ShipmentRequest.objects.filter(id=instance.id).update(
+                cod_amount=Decimal("0"),
+                total_cost=instance.total_cost
+            )
 
 @receiver(post_save, sender=ShipmentExtras)
 def recalculate_on_extras_change(sender, instance, **kwargs):

@@ -380,19 +380,21 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         extras_charges = self.extras_charges or Decimal('0')
         delivery_charge = self.delivery_charge or Decimal('0')
         
+        # Calculate subtotal without COD amount
         subtotal = (
             weight_charge + 
             total_additional_charges +
-            extras_charges
+            extras_charges +
+            delivery_charge
         )
         
-        # Add 5% COD charge if payment method is COD
+        # Calculate COD amount if payment method is COD (5% of subtotal)
         if self.payment_method == self.PaymentMethod.COD:
             self.cod_amount = round(subtotal * Decimal('0.05'), 2)
-            return round(subtotal + self.cod_amount + delivery_charge, 2)
-        
-        self.cod_amount = Decimal('0')
-        return round(subtotal + delivery_charge, 2)
+            return round(subtotal + self.cod_amount, 2)
+        else:
+            self.cod_amount = Decimal('0')
+            return round(subtotal, 2)
 
     def save(self, *args, **kwargs):
         is_new = not self.pk
