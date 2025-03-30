@@ -1,3 +1,4 @@
+from django.apps import apps
 from rest_framework import serializers
 
 from accounts.serializers import CitySerializer
@@ -17,7 +18,7 @@ class Buy4MeItemSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'product_name', 'product_url', 'quantity',
             'color', 'size', 'unit_price', 'currency', 'notes',
-            'total_price', 'created_at'
+            'store_to_warehouse_delivery_charge', 'total_price', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
 
@@ -32,14 +33,32 @@ class Buy4MeRequestSerializer(serializers.ModelSerializer):
         model = Buy4MeRequest
         fields = [
             'id', 'user', 'staff', 'driver', 'city', 'status', 'total_cost', 
-            'delivery_charge', 'shipping_address', 'notes', 'items', 'created_at', 'updated_at'
+            'city_delivery_charge', 'shipping_address', 'notes', 'items', 'created_at', 'updated_at'
         ]
         read_only_fields = [
             'id', 'user', 'staff', 'driver', 'city', 'total_cost', 
-            'delivery_charge', 'created_at', 'updated_at'
+            'city_delivery_charge', 'created_at', 'updated_at'
         ]
 
 class Buy4MeRequestCreateSerializer(serializers.ModelSerializer):
+    city = serializers.PrimaryKeyRelatedField(
+        queryset=apps.get_model('accounts', 'City').objects.filter(is_active=True),
+        required=False,
+        allow_null=True
+    )
+    
     class Meta:
         model = Buy4MeRequest
-        fields = ['shipping_address', 'notes', "id"] 
+        fields = ['shipping_address', 'notes', 'city', 'id']
+
+class Buy4MeRequestUpdateSerializer(serializers.ModelSerializer):
+    city = serializers.PrimaryKeyRelatedField(
+        queryset=apps.get_model('accounts', 'City').objects.filter(is_active=True),
+        required=False,
+        allow_null=True
+    )
+    
+    class Meta:
+        model = Buy4MeRequest
+        fields = ['shipping_address', 'notes', 'city', 'status']
+        extra_kwargs = {'status': {'required': False}} 

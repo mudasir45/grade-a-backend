@@ -8,7 +8,8 @@ from rest_framework.views import APIView
 
 from .models import Buy4MeItem, Buy4MeRequest
 from .serializers import (Buy4MeItemSerializer, Buy4MeRequestCreateSerializer,
-                          Buy4MeRequestSerializer)
+                          Buy4MeRequestSerializer,
+                          Buy4MeRequestUpdateSerializer)
 
 # Create your views here.
 
@@ -35,10 +36,42 @@ class Buy4MeRequestViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return Buy4MeRequestCreateSerializer
+        elif self.action in ['update', 'partial_update']:
+            return Buy4MeRequestUpdateSerializer
         return Buy4MeRequestSerializer
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        """
+        Create a Buy4Me request with the current user and set city delivery charge if city is provided
+        """
+        # Create the request with the current user
+        instance = serializer.save(user=self.request.user)
+        
+        # If a city was provided, the save method in the model will already set the 
+        # city_delivery_charge based on the city, but we need to calculate the total cost
+        if instance.city:
+            instance.calculate_total_cost()
+        
+        return instance
+
+    def perform_update(self, serializer):
+        """
+        Update a Buy4Me request and handle city changes
+        """
+        # Get the old city (if any) before saving
+        instance = self.get_object()
+        old_city = instance.city
+        
+        # Save the updated instance
+        instance = serializer.save()
+        
+        # If city has changed, update the city_delivery_charge and recalculate total cost
+        if instance.city != old_city:
+            # The save method in the model will set the city_delivery_charge
+            # based on the new city, but we need to recalculate the total cost
+            instance.calculate_total_cost()
+        
+        return instance
 
     @extend_schema(
         summary="Update request status",
@@ -74,6 +107,22 @@ class Buy4MeItemViewSet(viewsets.ModelViewSet):
             id=self.kwargs['request_pk']
         )
         serializer.save(buy4me_request=buy4me_request)
+        buy4me_request.calculate_total_cost()
+        
+    def perform_update(self, serializer):
+        """Recalculate total cost after item update"""
+        serializer.save()
+        # Get the parent request and recalculate cost
+        buy4me_request = serializer.instance.buy4me_request
+        buy4me_request.calculate_total_cost()
+        
+    def perform_destroy(self, instance):
+        """Recalculate total cost after item deletion"""
+        # Get the parent request before deleting
+        buy4me_request = instance.buy4me_request
+        # Delete the item
+        instance.delete()
+        # Recalculate the cost
         buy4me_request.calculate_total_cost()
 
 

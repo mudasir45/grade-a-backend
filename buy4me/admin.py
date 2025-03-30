@@ -98,7 +98,7 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
         'city__name'
     ]
     inlines = [Buy4MeItemInline]
-    readonly_fields = ['total_cost', 'created_at', 'updated_at', 'driver', 'delivery_charge', 'cost_breakdown_display']
+    readonly_fields = ['total_cost', 'created_at', 'updated_at', 'driver', 'city_delivery_charge', 'cost_breakdown_display']
     actions = ['assign_to_driver', 'unassign_driver', 'assign_to_me', 'unassign_staff', 'assign_to_city']
     
     fieldsets = (
@@ -123,7 +123,7 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
         ('Cost Information', {
             'fields': (
                 'cost_breakdown_display',
-                'delivery_charge',
+                'city_delivery_charge',
                 'total_cost',
             ),
             'description': 'Cost breakdown including delivery charge and total'
@@ -234,7 +234,7 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
         # Build detailed breakdown
         breakdown = f"""
             Items Total: ${items_total:.2f}<br>
-            <b>Delivery Charge: ${obj.delivery_charge:.2f}</b><br>
+            <b>Delivery Charge: ${obj.city_delivery_charge:.2f}</b><br>
             <b>Total: ${obj.total_cost:.2f}</b>
         """
         
@@ -246,7 +246,7 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
     total_cost_display.short_description = 'Total Cost'
     
     def delivery_charge_display(self, obj):
-        return format_html('<b>${}</b>', obj.delivery_charge)
+        return format_html('<b>${}</b>', obj.city_delivery_charge)
     delivery_charge_display.short_description = 'Delivery Charge'
     
     def assign_to_city(self, request, queryset):
@@ -257,7 +257,7 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
                 city = City.objects.get(id=city_id, is_active=True)
                 updated = queryset.update(
                     city=city,
-                    delivery_charge=city.delivery_charge
+                    city_delivery_charge=city.delivery_charge
                 )
                 
                 # For each updated request, try to assign a driver
@@ -396,7 +396,7 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
         """
         
         # Format the HTML with the values
-        html = html % (items_total, obj.delivery_charge, obj.total_cost)
+        html = html % (items_total, obj.city_delivery_charge, obj.total_cost)
         
         return mark_safe(html)
     cost_breakdown_display.short_description = 'Cost Breakdown'
