@@ -127,6 +127,8 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
     class PaymentStatus(models.TextChoices):
         PENDING = 'PENDING', _('Pending')
         PAID = 'PAID', _('Paid')
+        COD_PENDING = 'COD_PENDING', _('COD Pending')
+        COD_PAID = 'COD_PAID', _('COD Paid')
         FAILED = 'FAILED', _('Failed')
         REFUNDED = 'REFUNDED', _('Refunded')
 
