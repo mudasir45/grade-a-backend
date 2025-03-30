@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 
 from django.db.models import Sum
@@ -10,9 +11,10 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import DeliveryCommission, DriverProfile
+from accounts.models import DeliveryCommission, DriverPayment, DriverProfile
 from accounts.permissions import IsDriver, IsDriverForShipment, IsDriverOrStaff
-from accounts.serializers import (DeliveryCommissionSerializer,
+from accounts.serializers import (BulkDriverPaymentSerializer,
+                                  DeliveryCommissionSerializer,
                                   DriverProfileSerializer)
 from buy4me.models import Buy4MeRequest
 from buy4me.serializers import Buy4MeRequestSerializer
@@ -492,5 +494,158 @@ class DriverEarningsView(APIView):
             'shipment_earnings': shipment_earnings,
             'buy4me_earnings': buy4me_earnings,
             'commissions': commission_serializer.data
-        }) 
+        })
+
+
+@extend_schema(tags=['driver'])
+class BulkDriverPaymentView(APIView):
+    """
+    View for drivers to handle bulk payments for shipments or Buy4Me requests
+    """
+    permission_classes = [permissions.IsAuthenticated, IsDriver]
+    
+    @extend_schema(
+        summary="Create bulk payments for shipments or Buy4Me requests",
+        description="Allow drivers to create payments for multiple requests of the same type",
+        request=BulkDriverPaymentSerializer,
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string"},
+                    "payments_created": {"type": "integer"},
+                    "total_amount": {"type": "number"},
+                    "failed_requests": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "reason": {"type": "string"}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    )
+    def post(self, request):
+        """Create bulk payments for either shipments or Buy4Me requests"""
+        serializer = BulkDriverPaymentSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        payment_for = serializer.validated_data['payment_for']
+        request_ids = serializer.validated_data['request_ids']
+        
+        # Initialize counters and trackers
+        payments_created = 0
+        total_amount = Decimal('0.00')
+        failed_requests = []
+        
+        # Process based on payment type
+        if payment_for == DriverPayment.PaymentFor.BUY4ME:
+            # Process Buy4Me requests
+            buy4me_requests = Buy4MeRequest.objects.filter(
+                id__in=request_ids,
+                driver=request.user,
+                # Don't include requests that already have payments
+                driver_payments__isnull=True
+            )
+            
+            for buy4me_request in buy4me_requests:
+                try:
+                    # For Buy4Me, use the total_cost field which includes all costs
+                    # This represents the full value of the request including items and delivery
+                    amount = buy4me_request.total_cost or Decimal('0.00')
+                    
+                    # Create the payment record with auto-generated payment ID
+                    payment = DriverPayment.objects.create(
+                        driver=request.user,
+                        payment_id=f"AUTO-{uuid.uuid4().hex[:8]}",
+                        amount=amount,
+                        payment_for=DriverPayment.PaymentFor.BUY4ME,
+                        buy4me=buy4me_request
+                    )
+                    
+                    # Update the payment status to COD_PAID
+                    buy4me_request.payment_status = Buy4MeRequest.PaymentStatus.COD_PAID
+                    buy4me_request.save(update_fields=['payment_status'])
+                    
+                    payments_created += 1
+                    total_amount += amount
+                    
+                    # Remove this ID from the list since it was processed
+                    if str(buy4me_request.id) in request_ids:
+                        request_ids.remove(str(buy4me_request.id))
+                    
+                except Exception as e:
+                    failed_requests.append({
+                        'id': str(buy4me_request.id),
+                        'reason': f"Failed to create payment: {str(e)}"
+                    })
+                    
+        elif payment_for == DriverPayment.PaymentFor.SHIPMENT:
+            # Process shipment requests
+            shipment_requests = ShipmentRequest.objects.filter(
+                id__in=request_ids,
+                driver=request.user,
+                # Don't include shipments that already have payments
+                driver_payments__isnull=True
+            )
+            
+            for shipment_request in shipment_requests:
+                try:
+                    # Use the total_cost field for shipments as well
+                    # This is consistent with the Buy4Me implementation
+                    amount = shipment_request.total_cost or Decimal('0.00')
+                    
+                    # Create the payment record with auto-generated payment ID
+                    payment = DriverPayment.objects.create(
+                        driver=request.user,
+                        payment_id=f"AUTO-{uuid.uuid4().hex[:8]}",
+                        amount=amount,
+                        payment_for=DriverPayment.PaymentFor.SHIPMENT,
+                        shipment=shipment_request
+                    )
+                    
+                    # Update the payment status to COD_PAID
+                    shipment_request.payment_status = ShipmentRequest.PaymentStatus.COD_PAID
+                    shipment_request.save(update_fields=['payment_status'])
+                    
+                    payments_created += 1
+                    total_amount += amount
+                    
+                    # Remove this ID from the list since it was processed
+                    if str(shipment_request.id) in request_ids:
+                        request_ids.remove(str(shipment_request.id))
+                    
+                except Exception as e:
+                    failed_requests.append({
+                        'id': str(shipment_request.id),
+                        'reason': f"Failed to create payment: {str(e)}"
+                    })
+        
+        # Add any remaining IDs to failed_requests
+        for req_id in request_ids:
+            failed_requests.append({
+                'id': req_id,
+                'reason': 'Not found, already has payment, or not associated with this driver'
+            })
+        
+        # Return response
+        if payments_created > 0:
+            return Response({
+                'message': f'Successfully created {payments_created} payments',
+                'payments_created': payments_created,
+                'total_amount': total_amount,
+                'failed_requests': failed_requests
+            })
+        else:
+            return Response({
+                'message': 'No valid requests found for payment',
+                'payments_created': 0,
+                'total_amount': 0,
+                'failed_requests': failed_requests
+            }, status=status.HTTP_400_BAD_REQUEST)
         

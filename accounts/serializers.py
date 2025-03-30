@@ -195,3 +195,14 @@ class DriverPaymentSerializer(serializers.ModelSerializer):
         model = DriverPayment
         fields = '__all__'
 
+
+class BulkDriverPaymentSerializer(serializers.Serializer):
+    payment_for = serializers.ChoiceField(
+        choices=DriverPayment.PaymentFor.choices,
+        help_text="Type of request (SHIPMENT or BUY4ME)"
+    )
+    request_ids = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="List of request IDs of the specified type"
+    )
+

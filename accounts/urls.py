@@ -1,22 +1,31 @@
-from django.urls import include, path
+from django.urls import path
 from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import views, views_driver
 
 app_name = 'accounts'
 
-# Create a router for ViewSets
+# Register default router for ViewSets
 router = DefaultRouter()
-router.register('users', views.UserViewSet)
+router.register('users', views.UserViewSet, basename='user')
 
 urlpatterns = [
-    # Include router URLs
-    path('', include(router.urls)),
+    # User authentication & management
     path('signup/', views.SignUpView.as_view(), name='signup'),
+    path('login/', views.PhoneTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('user-countries/', views.UserCountryView.as_view(), name='user-countries'),
     path('contact/', views.ContactView.as_view(), name='contact'),
+    path('stores/', views.StoresView.as_view(), name='stores'),
+    path('check-staff-user/', views.CheckStaffUserView.as_view(), name='check-staff-user'),
+    path('check-driver-user/', views.CheckDriverUserView.as_view(), name='check-driver-user'),
+    path('cities/', views.CitiesView.as_view(), name='cities'),
     
-    # Driver panel endpoints
+    # Staff-related endpoints
+    path('staff-associated-users/', views.StaffAssociatedUsersView.as_view(), name='staff-associated-users'),
+    
+    # Driver-related endpoints
     path('driver/dashboard/', views_driver.DriverDashboardView.as_view(), name='driver-dashboard'),
     path('driver/shipments/', views_driver.DriverShipmentList.as_view(), name='driver-shipments'),
     path('driver/buy4me/', views_driver.DriverBuy4MeList.as_view(), name='driver-buy4me'),
@@ -27,14 +36,12 @@ urlpatterns = [
          views_driver.DriverBuy4MeStatusUpdateView.as_view(), 
          name='driver-buy4me-update'),
     path('driver/earnings/', views_driver.DriverEarningsView.as_view(), name='driver-earnings'),
-    path('stores/', views.StoresView.as_view(), name='stores'),
-    path('check-staff-user/', views.CheckStaffUserView.as_view(), name='check-staff-user'),
-    path('check-driver-user/', views.CheckDriverUserView.as_view(), name='check-driver-user'),
-    path('cities/', views.CitiesView.as_view(), name='cities'),
     path('driver/payments/', views.DriverPaymentView.as_view(), name='driver-payments'),
-    path('staff-associated-users/', views.StaffAssociatedUsersView.as_view(), name='staff-associated-users'),
+    path('driver/bulk-payments/', views_driver.BulkDriverPaymentView.as_view(), name='driver-bulk-payments'),
     
-    # support ticket endpoints
+    # Support ticket endpoints
     path('tickets/', views.SupportTicketListCreateView.as_view(), name='ticket-list-create'),
     path('tickets/<str:ticket_number>/', views.SupportTicketDetailView.as_view(), name='ticket-detail'),
-] 
+]
+
+urlpatterns += router.urls

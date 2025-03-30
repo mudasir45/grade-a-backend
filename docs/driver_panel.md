@@ -31,6 +31,7 @@ The Driver Panel is a dedicated interface for delivery drivers in the Grade-A Ex
 - Status updates with location tracking
 - Earnings tracking and commission calculation
 - Profile management
+- Bulk payment processing for shipments and Buy4Me requests
 
 ## Backend API Endpoints
 
@@ -192,6 +193,96 @@ The Driver Panel is a dedicated interface for delivery drivers in the Grade-A Ex
 }
 ```
 
+### 7. Bulk Payment Processing
+
+**Endpoint**: `POST /api/driver/bulk-payments/`
+**Permission**: Authenticated Driver
+
+**Description**: This endpoint allows drivers to submit multiple shipment or Buy4Me request IDs at once to create payment records and update payment statuses. It's designed for efficiently processing collections made by drivers in the field.
+
+**Request Body**:
+
+```json
+{
+  "payment_for": "SHIPMENT|BUY4ME",
+  "request_ids": ["array of request IDs"]
+}
+```
+
+**Field Descriptions**:
+
+- `payment_for`: Required. Specifies whether the payment is for shipments or Buy4Me requests. Must be either "SHIPMENT" or "BUY4ME".
+- `request_ids`: Required. Array of IDs for the shipments or Buy4Me requests to be processed.
+
+**Response**:
+
+```json
+{
+  "message": "Successfully created X payments",
+  "payments_created": "integer",
+  "total_amount": "decimal",
+  "failed_requests": [
+    {
+      "id": "string",
+      "reason": "string"
+    }
+  ]
+}
+```
+
+**Response Fields**:
+
+- `message`: Summary of the operation result
+- `payments_created`: Number of successful payment records created
+- `total_amount`: Sum of all payment amounts created
+- `failed_requests`: Array of request IDs that could not be processed, with reasons
+
+**Processing Details**:
+
+- The endpoint creates a payment record for each valid request ID
+- Payment amount is taken from the request's `total_cost` field
+- Payment status is updated to "COD_PAID" after successful creation
+- Each payment gets an auto-generated payment ID with prefix "AUTO-"
+- Requests that already have payments or are not associated with the driver are reported as failed
+
+**Error Cases**:
+
+- 400: Invalid input data or no valid requests found
+- 401: Unauthorized
+- 403: Not a driver
+
+**Example Request**:
+
+```json
+// For shipments
+{
+  "payment_for": "SHIPMENT",
+  "request_ids": ["SRS123456", "SRS789012", "SRS345678"]
+}
+
+// For Buy4Me requests
+{
+  "payment_for": "BUY4ME",
+  "request_ids": ["BMR123456", "BMR789012"]
+}
+```
+
+**Example Response**:
+
+```json
+{
+  "message": "Successfully created 2 payments",
+  "payments_created": 2,
+  "total_amount": 150.0,
+  "failed_requests": [
+    {
+      "id": "SRS345678",
+      "reason": "Not found, already has payment, or not associated with this driver"
+    }
+  ]
+}
+```
+
 ## Frontend Implementation
 
 ### Page Structure
@@ -214,6 +305,8 @@ The Driver Panel is a dedicated interface for delivery drivers in the Grade-A Ex
     /earnings
       page.tsx
     /profile
+      page.tsx
+    /payments
       page.tsx
 ```
 
@@ -258,6 +351,35 @@ interface StatusUpdateForm {
 }
 ```
 
+#### 3. Bulk Payment Components
+
+```typescript
+// BulkPaymentForm.tsx
+interface BulkPaymentFormProps {
+  paymentType: "SHIPMENT" | "BUY4ME";
+  onSubmit: (data: BulkPaymentData) => Promise<void>;
+  isLoading: boolean;
+}
+
+interface BulkPaymentData {
+  payment_for: "SHIPMENT" | "BUY4ME";
+  request_ids: string[];
+}
+
+// PaymentResultsDisplay.tsx
+interface PaymentResultsProps {
+  results: {
+    message: string;
+    payments_created: number;
+    total_amount: number;
+    failed_requests: Array<{
+      id: string;
+      reason: string;
+    }>;
+  } | null;
+}
+```
+
 ### State Management
 
 Use React Query for API data management:
@@ -279,6 +401,14 @@ export const useShipments = (filters: ShipmentFilters) => {
     queryFn: () => fetchShipments(filters),
   });
 };
+
+// hooks/useBulkPayment.ts
+export const useBulkPayment = () => {
+  return useMutation({
+    mutationFn: (data: BulkPaymentData) =>
+      api.post("/driver/bulk-payments/", data).then((res) => res.data),
+  });
+};
 ```
 
 ### UI Components
@@ -297,6 +427,7 @@ Implement with a responsive sidebar navigation:
 - Dashboard overview
 - Active deliveries
 - Earnings section
+- Payment processing section
 - Profile settings
 
 #### 2. Status Update Modal
@@ -310,6 +441,23 @@ interface StatusUpdateModalProps {
   availableStatuses: StatusLocation[];
 }
 ```
+
+#### 3. Bulk Payment UI
+
+```typescript
+// components/driver/BulkPaymentInterface.tsx
+interface BulkPaymentInterfaceProps {
+  initialType?: "SHIPMENT" | "BUY4ME";
+}
+```
+
+The bulk payment interface should include:
+
+- Radio buttons to select payment type (Shipment or Buy4Me)
+- Multiple selection interface for available requests
+- Summary of selected items and total amount
+- Submit button with loading state
+- Results display with success and failure information
 
 ### Styling Guidelines
 

@@ -23,6 +23,8 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
     class PaymentStatus(models.TextChoices):
         PENDING = 'PENDING', _('Pending')
         PAID = 'PAID', _('Paid')
+        COD = 'COD', _('COD')
+        COD_PAID = 'COD_PAID', _('COD Paid')
         REFUNDED = 'REFUNDED', _('Refunded')
         CANCELLED = 'CANCELLED', _('Cancelled')
         
