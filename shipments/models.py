@@ -279,10 +279,8 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
     )
     
     description = models.TextField(help_text=_('Package contents description'))
-    declared_value = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        validators=[MinValueValidator(0)],
+    declared_value = models.CharField(
+        max_length=255,
         help_text=_('Declared value for customs')
     )
 

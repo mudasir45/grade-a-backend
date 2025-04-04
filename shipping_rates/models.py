@@ -12,6 +12,7 @@ class Country(SixDigitIDMixin, models.Model):
 
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=2)
+    currency = models.ForeignKey('Currency', on_delete=models.SET_NULL, null=True, blank=True)
     country_type = models.CharField(
         max_length=12, 
         choices=CountryType.choices, 

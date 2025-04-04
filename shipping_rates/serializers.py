@@ -6,10 +6,16 @@ from .models import (AdditionalCharge, Country, Currency, DimensionalFactor,
                      Extras, ServiceType, ShippingZone, WeightBasedRate)
 
 
+class CurrencySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Currency
+        fields = ['id', 'code', 'name', 'conversion_rate']
+
 class CountrySerializer(serializers.ModelSerializer):
+    currency = CurrencySerializer(read_only=True)
     class Meta:
         model = Country
-        fields = ['id', 'name', 'code', 'country_type', 'is_active']
+        fields = ['id', 'name', 'code', 'currency', 'country_type', 'is_active']
 
 class ServiceTypeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -166,8 +172,4 @@ class CurrencyConversionSerializer(serializers.Serializer):
     from_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     to_currency = serializers.CharField(max_length=10)
 
-class CurrencySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Currency
-        fields = ['id', 'code', 'name', 'conversion_rate']
 

@@ -74,12 +74,6 @@ class User(AbstractUser):
         ADMIN = 'ADMIN', _('Admin')
         SUPER_ADMIN = 'SUPER_ADMIN', _('Super Admin')
         
-    class Currency(models.TextChoices):
-        USD = 'USD', _('USD')
-        EUR = 'EUR', _('EUR')
-        GBP = 'GBP', _('GBP')
-        CAD = 'CAD', _('CAD')
-        AUD = 'AUD', _('AUD')
         
     user_type = models.CharField(
         max_length=20,
