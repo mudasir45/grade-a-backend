@@ -110,7 +110,7 @@ class User(AbstractUser):
         blank=True,
         related_name='default_shipping_method'
     )
-    preferred_currency = models.CharField(max_length=10, choices=Currency.choices, blank=True, default='USD')
+    preferred_currency = models.ForeignKey('shipping_rates.Currency', on_delete=models.SET_NULL, null=True, blank=True)    
     # Store the encrypted password for retrieval (more secure than plaintext)
     plain_password = models.CharField(max_length=255, blank=True, null=True, 
                                      help_text=_("Encrypted password for message generation"))

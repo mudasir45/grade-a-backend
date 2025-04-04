@@ -12,7 +12,7 @@ from accounts.models import City
 from .models import (AdditionalCharge, Country, Currency, DimensionalFactor,
                      Extras, ServiceType, ShippingZone, WeightBasedRate)
 from .serializers import (AdditionalChargeSerializer, CountrySerializer,
-                          CurrencyConversionSerializer,
+                          CurrencyConversionSerializer, CurrencySerializer,
                           DimensionalFactorSerializer, ExtrasSerializer,
                           ServiceTypeSerializer, ShippingCalculatorSerializer,
                           ShippingZoneSerializer, WeightBasedRateSerializer)
@@ -341,4 +341,9 @@ class CurrencyConversionAPIView(APIView):
 
 
 
-
+class CurrencyAPIView(APIView):
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        currencies = Currency.objects.all()
+        serializer = CurrencySerializer(currencies, many=True)
+        return Response(serializer.data)    

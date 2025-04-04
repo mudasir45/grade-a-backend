@@ -2,8 +2,8 @@ from rest_framework import serializers
 
 from accounts.models import City
 
-from .models import (AdditionalCharge, Country, DimensionalFactor, Extras,
-                     ServiceType, ShippingZone, WeightBasedRate)
+from .models import (AdditionalCharge, Country, Currency, DimensionalFactor,
+                     Extras, ServiceType, ShippingZone, WeightBasedRate)
 
 
 class CountrySerializer(serializers.ModelSerializer):
@@ -165,4 +165,9 @@ class CurrencyConversionSerializer(serializers.Serializer):
     from_currency = serializers.CharField(max_length=10)
     from_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     to_currency = serializers.CharField(max_length=10)
+
+class CurrencySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Currency
+        fields = ['id', 'code', 'name', 'conversion_rate']
 

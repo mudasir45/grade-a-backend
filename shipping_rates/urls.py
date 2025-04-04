@@ -16,4 +16,5 @@ urlpatterns = [
     path('', include(router.urls)),
     path('extras', views.ExtrasView.as_view(), name="get-extras"),
     path('convert-currency/', views.CurrencyConversionAPIView.as_view(), name='convert-currency'),
+    path('currencies/', views.CurrencyAPIView.as_view(), name='currencies'),
 ] 
