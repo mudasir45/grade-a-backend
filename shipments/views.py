@@ -1263,175 +1263,145 @@ class StaffShipmentAWBView(APIView):
     
     def generate_awb(self, shipment):
         """Generate AWB PDF for a shipment"""
+        # Import QrCodeWidget for QR code generation
+        from reportlab.graphics import renderPDF
+        from reportlab.graphics.barcode.qr import QrCodeWidget
+        from reportlab.graphics.shapes import Drawing
+        
         buffer = io.BytesIO()
-        p = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
+        # Change to a smaller page size suitable for receipt printers (80mm width)
+        receipt_width = 226  # ~80mm in points
+        receipt_height = 600  # Taller receipt
+        p = canvas.Canvas(buffer, pagesize=(receipt_width, receipt_height))
         
         # Define common measurements
-        left_margin = 40
-        right_margin = width - 40
-        top_margin = height - 30
+        left_margin = 10
+        right_margin = receipt_width - 10
+        top_margin = receipt_height - 20
         
         # Draw border around the page
-        p.rect(left_margin - 5, 30, width - 70, height - 60)
+        p.rect(left_margin, 20, receipt_width - 20, receipt_height - 40)
         
-        # Header section - moved company name lower
-        p.setFont("Helvetica-Bold", 22)
-        p.drawString(left_margin + 5, top_margin - 25, "Grade-A Express")  # Moved lower
-        p.setFont("Helvetica", 11)
-        p.drawString(left_margin + 5, top_margin - 45, "International Air Waybill")  # Adjusted
+        # Header section
+        p.setFont("Helvetica-Bold", 14)  # Increased font size
+        p.drawCentredString(receipt_width/2, top_margin - 20, "Grade-A Express")
+        p.setFont("Helvetica-Bold", 12)  # Increased font size
+        # p.drawString(left_margin + 10, top_margin - 40, "Description:")
+        p.setFont("Helvetica", 12)
+        # if shipment.description:
+        #     p.drawString(left_margin + 80, top_margin - 40, shipment.description)
         
-        # Draw AWB number box (top right) - adjusted alignment
-        p.rect(right_margin - 90, top_margin - 45, 80, 25)  # Adjusted box size and position
-        p.setFont("Helvetica-Bold", 14)  # Reduced font size
-        p.drawString(right_margin - 80, top_margin - 30, shipment.tracking_number[-7:])  # Better centered
+        # AWB number section
+        p.setFont("Helvetica-Bold", 12)
+        p.drawCentredString(receipt_width/2, top_margin - 60, shipment.tracking_number)
         
-        # Draw barcode
-        barcode_value = shipment.tracking_number
-        barcode = code128.Code128(barcode_value, barHeight=25*mm, barWidth=1.5)
-        barcode_width = 250
-        barcode_x = (width - barcode_width) / 2
-        barcode.drawOn(p, barcode_x, top_margin - 110)
+        # Generate and draw QR code instead of barcode
+        qr_code = QrCodeWidget(shipment.tracking_number)
+        bounds = qr_code.getBounds()
+        qr_width = bounds[2] - bounds[0]
+        qr_height = bounds[3] - bounds[1]
+        qr_size = 100  # Size of QR code in points
+        drawing = Drawing(qr_size, qr_size, transform=[qr_size/qr_width, 0, 0, qr_size/qr_height, 0, 0])
+        drawing.add(qr_code)
         
-        # Draw tracking number below barcode
-        p.setFont("Helvetica", 10)
-        p.drawString(barcode_x + 60, top_margin - 125, "Tracking Number:")
+        # Position QR code in the center
+        qr_x = (receipt_width - qr_size) / 2
+        qr_y = top_margin - 170
+        renderPDF.draw(drawing, p, qr_x, qr_y)
+        
+        # Content sections - FROM
+        y = top_margin - 180
+        # Title
+        p.setFillColor(colors.lightgrey)
+        p.rect(left_margin + 5, y, right_margin - left_margin - 10, 18, fill=1)
+        p.setFillColor(colors.black)
         p.setFont("Helvetica-Bold", 11)
-        p.drawString(barcode_x + 140, top_margin - 125, barcode_value)
+        p.drawCentredString(receipt_width/2, y + 5, "FROM")
         
-        # Start content area
-        content_top = top_margin - 160
-        box_height = 140
+        # FROM details
+        y -= 25
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(left_margin + 10, y, "Name:")
+        p.setFont("Helvetica", 10)
+        p.drawString(left_margin + 60, y, shipment.sender_name)
         
-        # FROM and TO boxes side by side
-        box_width = (right_margin - left_margin - 10) / 2
+        y -= 18
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(left_margin + 10, y, "Phone:")
+        p.setFont("Helvetica", 10)
+        p.drawString(left_margin + 60, y, shipment.sender_phone)
         
-        # FROM box
-        p.rect(left_margin, content_top - box_height, box_width, box_height)
-        # Title bar
+        y -= 18
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(left_margin + 10, y, "Country:")
+        p.setFont("Helvetica", 10)
+        p.drawString(left_margin + 60, y, shipment.sender_country.name)
+        
+        # TO section
+        y -= 25
         p.setFillColor(colors.lightgrey)
-        p.rect(left_margin, content_top - 25, box_width, 25, fill=1)
+        p.rect(left_margin + 5, y, right_margin - left_margin - 10, 18, fill=1)
         p.setFillColor(colors.black)
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(left_margin + 10, content_top - 17, "FROM")
+        p.setFont("Helvetica-Bold", 11)
+        p.drawCentredString(receipt_width/2, y + 5, "TO")
         
-        # Sender details with better spacing and alignment
-        y = content_top - 45
-        field_pairs = [
-            ("Name:", shipment.sender_name),
-            ("Phone:", shipment.sender_phone),
-            ("Address:", shipment.sender_address),
-            ("Country:", shipment.sender_country.name)
-        ]
+        # TO details
+        y -= 25
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(left_margin + 10, y, "Name:")
+        p.setFont("Helvetica", 10)
+        p.drawString(left_margin + 60, y, shipment.recipient_name)
         
-        for label, value in field_pairs:
-            p.setFont("Helvetica", 10)
-            p.drawString(left_margin + 15, y, label)
-            p.setFont("Helvetica-Bold", 10)
-            if label == "Address:":
-                y -= 15  # Move down for address value
-                for line in value.split('\n'):
-                    p.drawString(left_margin + 75, y, line.strip())
-                    y -= 15
-                y -= 5  # Extra space after address
-            else:
-                p.drawString(left_margin + 75, y, value)
-                y -= 25  # Space between fields
+        y -= 18
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(left_margin + 10, y, "Phone:")
+        p.setFont("Helvetica", 10)
+        p.drawString(left_margin + 60, y, shipment.recipient_phone)
         
-        # TO box
-        to_x = left_margin + box_width + 10
-        p.rect(to_x, content_top - box_height, box_width, box_height)
-        # Title bar
+        y -= 18
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(left_margin + 10, y, "Country:")
+        p.setFont("Helvetica", 10)
+        p.drawString(left_margin + 60, y, shipment.recipient_country.name)
+        
+        # SHIPMENT DETAILS
+        y -= 25
         p.setFillColor(colors.lightgrey)
-        p.rect(to_x, content_top - 25, box_width, 25, fill=1)
+        p.rect(left_margin + 5, y, right_margin - left_margin - 10, 18, fill=1)
         p.setFillColor(colors.black)
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(to_x + 10, content_top - 17, "TO")
+        p.setFont("Helvetica-Bold", 11)
+        p.drawCentredString(receipt_width/2, y + 5, "SHIPMENT DETAILS")
         
-        # Recipient details with better spacing and alignment
-        y = content_top - 45
-        field_pairs = [
-            ("Name:", shipment.recipient_name),
-            ("Phone:", shipment.recipient_phone),
-            ("Address:", shipment.recipient_address),
-            ("Country:", shipment.recipient_country.name)
-        ]
+        # Details
+        y -= 25
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(left_margin + 10, y, "Service:")
+        p.setFont("Helvetica", 10)
+        p.drawString(left_margin + 60, y, shipment.service_type.name)
         
-        for label, value in field_pairs:
-            p.setFont("Helvetica", 10)
-            p.drawString(to_x + 15, y, label)
-            p.setFont("Helvetica-Bold", 10)
-            if label == "Address:":
-                y -= 15  # Move down for address value
-                for line in value.split('\n'):
-                    p.drawString(to_x + 75, y, line.strip())
-                    y -= 15
-                y -= 5  # Extra space after address
-            else:
-                p.drawString(to_x + 75, y, value)
-                y -= 25  # Space between fields
+        y -= 18
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(left_margin + 10, y, "Package:")
+        p.setFont("Helvetica", 10)
+        p.drawString(left_margin + 60, y, shipment.package_type)
         
-        # Shipment Details section - full width with increased height
-        details_top = content_top - box_height - 30  # Increased spacing
-        details_height = 100  # Increased height
-        p.rect(left_margin, details_top - details_height, right_margin - left_margin, details_height)
+        y -= 18
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(left_margin + 10, y, "Weight:")
+        p.setFont("Helvetica", 10)
+        p.drawString(left_margin + 60, y, f"{shipment.weight} kg")
         
-        # Title bar
+        # SPECIAL INSTRUCTIONS - No space between this and footer
+        y -= 25
         p.setFillColor(colors.lightgrey)
-        p.rect(left_margin, details_top - 25, right_margin - left_margin, 25, fill=1)
+        p.rect(left_margin + 5, y, right_margin - left_margin - 10, 18, fill=1)
         p.setFillColor(colors.black)
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(left_margin + 10, details_top - 17, "SHIPMENT DETAILS")
+        p.setFont("Helvetica-Bold", 11)
+        p.drawCentredString(receipt_width/2, y + 5, "SPECIAL INSTRUCTIONS")
         
-        # Details content in two columns with better alignment and spacing
-        y = details_top - 45
-        col_width = (right_margin - left_margin - 40) / 2
-        
-        # Left column
-        x = left_margin + 15
-        details_left = [
-            ("Service:", shipment.service_type.name),
-            ("Package:", shipment.package_type),
-            ("Weight:", f"{shipment.weight} kg")
-        ]
-        
-        for label, value in details_left:
-            p.setFont("Helvetica", 10)
-            p.drawString(x, y, label)
-            p.setFont("Helvetica-Bold", 10)
-            p.drawString(x + 65, y, value)
-            y -= 25  # Increased spacing between lines
-        
-        # Right column
-        x = left_margin + col_width + 30
-        y = details_top - 45
-        details_right = [
-            ("Dimensions:", f"{shipment.length}×{shipment.width}×{shipment.height} cm"),
-            ("Payment:", shipment.get_payment_method_display())
-        ]
-        
-        for label, value in details_right:
-            p.setFont("Helvetica", 10)
-            p.drawString(x, y, label)
-            p.setFont("Helvetica-Bold", 10)
-            p.drawString(x + 75, y, value)
-            y -= 25  # Increased spacing between lines
-        
-        # Special Instructions section - adjusted spacing
-        instructions_top = details_top - details_height - 20
-        instructions_height = 60
-        p.rect(left_margin, instructions_top - instructions_height, 
-               right_margin - left_margin, instructions_height)
-        
-        # Title bar
-        p.setFillColor(colors.lightgrey)
-        p.rect(left_margin, instructions_top - 25, right_margin - left_margin, 25, fill=1)
-        p.setFillColor(colors.black)
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(left_margin + 10, instructions_top - 17, "SPECIAL INSTRUCTIONS")
-        
-        # Instructions content with better spacing
-        y = instructions_top - 45
+        # Instructions content
+        y -= 25
+        p.setFont("Helvetica", 10)
         instructions = []
         if shipment.description:
             instructions.append(f"Description: {shipment.description}")
@@ -1441,33 +1411,46 @@ class StaffShipmentAWBView(APIView):
             instructions.append("Signature Required")
         
         if instructions:
-            p.setFont("Helvetica", 10)
-            p.drawString(left_margin + 15, y, " | ".join(instructions))
+            # For longer descriptions, wrap text to fit width
+            instruction_text = " | ".join(instructions)
+            if len(instruction_text) > 30:  # If text is long
+                lines = []
+                current_line = ""
+                for word in instruction_text.split():
+                    if len(current_line + " " + word) <= 30:
+                        current_line += " " + word if current_line else word
+                    else:
+                        lines.append(current_line)
+                        current_line = word
+                if current_line:
+                    lines.append(current_line)
+                
+                for line in lines:
+                    p.drawString(left_margin + 10, y, line)
+                    y -= 15
+            else:
+                p.drawString(left_margin + 10, y, instruction_text)
         else:
-            p.setFont("Helvetica", 10)
-            p.drawString(left_margin + 15, y, "None")
+            p.drawString(left_margin + 10, y, "None")
+            y -= 15
         
-        # Footer with better alignment
-        footer_top = 60
+        # Footer - position at absolute bottom of receipt instead of directly after instructions
+        footer_y = 60  # Fixed position at bottom of receipt
+        
         p.setFillColor(colors.lightgrey)
-        p.rect(left_margin, footer_top - 30, right_margin - left_margin, 30, fill=1)
+        p.rect(left_margin + 5, footer_y - 30, right_margin - left_margin - 10, 30, fill=1)
         p.setFillColor(colors.black)
         
-        # Footer content with consistent spacing
-        p.setFont("Helvetica-Bold", 8)
-        p.drawString(left_margin + 15, footer_top - 12, "COURIER COPY")
-        p.drawString(right_margin - 80, footer_top - 12, "RECEIVER COPY")
+        # Footer content with larger fonts
+        p.setFont("Helvetica-Bold", 9)
+        p.drawString(left_margin + 10, footer_y - 10, "COURIER COPY")
+        p.drawString(right_margin - 90, footer_y - 10, "RECEIVER COPY")
         
-        # Timestamp and AWB with better spacing
+        # Timestamp and AWB
         timestamp = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
-        p.setFont("Helvetica", 7)
-        p.drawString(left_margin + 120, footer_top - 12, f"Generated: {timestamp}")
-        p.drawString(left_margin + 280, footer_top - 12, f"AWB: {shipment.tracking_number}")
-        
-        # Terms line with better alignment
-        p.setFont("Helvetica", 6)
-        p.drawString(left_margin + 15, footer_top - 25, 
-                    "By accepting this shipment, the sender agrees to Grade-A Express's terms of service. Additional charges may apply based on actual weight/dimensions.")
+        p.setFont("Helvetica", 8)
+        p.drawCentredString(receipt_width/2, footer_y - 20, f"Generated: {timestamp}")
+        p.drawCentredString(receipt_width/2, footer_y - 30, f"AWB: {shipment.tracking_number}")
         
         # Close the PDF object
         p.showPage()

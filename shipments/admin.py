@@ -100,7 +100,7 @@ class ShipmentStatusLocationAdmin(admin.ModelAdmin):
 class ShipmentRequestAdmin(admin.ModelAdmin):
     list_display = [
         'tracking_number', 'status_badge', 'payment_status_badge',
-        'user_link', 'staff_link', 'driver_link', 'city_link',
+         'city_link',
         'sender_name', 'recipient_name',
         'service_type', 'total_cost_display',  'receipt_download', 'id', 'created_at'
     ]

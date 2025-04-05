@@ -736,7 +736,8 @@ class ShipmentMessageTemplate(models.Model):
             'Message template with placeholders. Available placeholders: '
             '{recipient_name}, {sender_name}, {sender_country}, {tracking_number}, '
             '{package_type}, {weight}, {dimensions}, {status}, {current_location}, '
-            '{estimated_delivery}, {description}, {sender_email}, {sender_phone}'
+            '{estimated_delivery}, {description}, {sender_email}, {sender_phone}, '
+            '{total_cost}, {converted_cost}'
         )
     )
     is_active = models.BooleanField(
@@ -773,6 +774,8 @@ class ShipmentMessageTemplate(models.Model):
             'description': 'Electronics and accessories',
             'sender_email': 'shipper@example.com',
             'sender_phone': '+1234567890',
+            'total_cost': '250.00',
+            'converted_cost': 'NGN 125,000.00',
         }
         
         # Replace placeholders in the message content

@@ -389,6 +389,15 @@ class ShipmentMessageSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Additional notes to include in the message"
     )
+    convert_currency = serializers.BooleanField(
+        default=False,
+        help_text="Whether to convert the total cost to a different currency"
+    )
+    currency_code = serializers.CharField(
+        required=False,
+        default="NGN",
+        help_text="Currency code to convert to (e.g., NGN for Nigerian Naira)"
+    )
     
     def generate_message(self, shipment):
         """Generate a professional message based on shipment details and options"""
@@ -402,6 +411,8 @@ class ShipmentMessageSerializer(serializers.Serializer):
         include_credentials = self.validated_data.get('include_credentials', False)
         user_id = self.validated_data.get('user_id', '')
         additional_notes = self.validated_data.get('additional_notes', '')
+        convert_currency = self.validated_data.get('convert_currency', False)
+        currency_code = self.validated_data.get('currency_code', 'NGN')
         
         # Fetch user credentials if user_id is provided
         user_phone = ''
@@ -481,6 +492,35 @@ class ShipmentMessageSerializer(serializers.Serializer):
         estimated_delivery = "To be determined"
         if hasattr(shipment, 'estimated_delivery') and shipment.estimated_delivery:
             estimated_delivery = shipment.estimated_delivery.strftime('%d %B %Y')
+            
+        # Convert currency if requested
+        total_cost = getattr(shipment, 'total_cost', Decimal('0.00'))
+        converted_cost = ""
+        
+        # Always attempt to convert to NGN for Nigerian customers
+        try:
+            from shipping_rates.models import Currency
+
+            # Get base currency (typically the system default, assuming MYR)
+            base_currency_code = 'MYR'  # Default base currency
+            target_currency_code = 'NGN'  # Always convert to NGN
+            
+            # Try to get both currencies
+            try:
+                base_currency = Currency.objects.get(code=base_currency_code)
+                target_currency = Currency.objects.get(code=target_currency_code)
+                
+                # Convert amount using the same logic as in CurrencyConversionAPIView
+                amount_in_myr = total_cost / base_currency.conversion_rate
+                converted_amount = amount_in_myr * target_currency.conversion_rate
+                converted_cost = f"NGN {round(converted_amount, 2):,.2f}"
+                
+            except Currency.DoesNotExist:
+                # If currency not found, leave converted cost empty
+                pass
+        except ImportError:
+            # If Currency model can't be imported, leave converted cost empty
+            pass
         
         # Create data dictionary with all available placeholders
         data = {
@@ -498,8 +538,9 @@ class ShipmentMessageSerializer(serializers.Serializer):
             'package_type': getattr(shipment, 'package_type', 'Package'),
             'weight': f"{getattr(shipment, 'weight', 'N/A')}",
             'dimensions': dimensions,
-            'declared_value': f"{getattr(shipment, 'declared_value', '0.00')}",
-            'total_cost': f"{getattr(shipment, 'total_cost', '0.00')}",
+            'declared_value': f"RM {float(getattr(shipment, 'declared_value', '0.00')):,.2f}",
+            'total_cost': f"RM {total_cost:,.2f}",
+            'converted_cost': converted_cost,
             'status': status_display,
             'payment_method': payment_method_display,
             'payment_status': payment_status_display,
@@ -540,6 +581,33 @@ class ShipmentMessageSerializer(serializers.Serializer):
         recipient_name = shipment.recipient_name.split()[0] if shipment.recipient_name else "Valued Customer"
         sender_name = getattr(shipment, 'sender_name', '')
         
+        # Convert total cost to NGN if not empty
+        total_cost = getattr(shipment, 'total_cost', Decimal('0.00'))
+        formatted_cost = f"RM {total_cost:,.2f}"
+        
+        # Attempt to convert to NGN
+        converted_cost = ""
+        try:
+            from shipping_rates.models import Currency
+            base_currency_code = 'MYR'  # Default base currency
+            target_currency_code = 'NGN'
+            
+            # Try to get both currencies
+            try:
+                base_currency = Currency.objects.get(code=base_currency_code)
+                target_currency = Currency.objects.get(code=target_currency_code)
+                
+                # Convert amount using the same logic as in CurrencyConversionAPIView
+                amount_in_myr = total_cost / base_currency.conversion_rate
+                converted_amount = amount_in_myr * target_currency.conversion_rate
+                converted_cost = f"NGN {round(converted_amount, 2):,.2f}"
+            except Currency.DoesNotExist:
+                # If currency not found, leave converted cost empty
+                pass
+        except ImportError:
+            # If Currency model can't be imported, leave converted cost empty
+            pass
+        
         if message_type == 'sender_notification':
             message = f"Dear {sender_name},\n\n"
             message += f"Thank you for creating a shipment with Grade-A Express. Your shipment has been successfully registered in our system and is awaiting payment.\n\n"
@@ -552,8 +620,12 @@ class ShipmentMessageSerializer(serializers.Serializer):
             if all([hasattr(shipment, attr) for attr in ['length', 'width', 'height']]):
                 message += f"- Dimensions: {shipment.length} × {shipment.width} × {shipment.height} cm\n"
             
-            message += f"- Declared Value: ${getattr(shipment, 'declared_value', '0.00')}\n"
-            message += f"- Total Cost: ${getattr(shipment, 'total_cost', '0.00')}\n\n"
+            message += f"- Declared Value: RM{getattr(shipment, 'declared_value', '0.00')}\n"
+            message += f"- Total Cost: {formatted_cost}\n"
+            if converted_cost:
+                message += f"- Total Cost (in Naira): {converted_cost}\n\n"
+            else:
+                message += "\n"
             
             message += f"Recipient Information:\n"
             message += f"- Name: {getattr(shipment, 'recipient_name', '')}\n"
