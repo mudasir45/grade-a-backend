@@ -489,10 +489,13 @@ def generate_shipment_receipt(shipment):
     # Package details
     elements.append(Paragraph('SHIPMENT DETAILS', styles['SectionHeader']))
     
+    # Use the existing format_decimal function
+    formatted_declared_value = f"${format_decimal(shipment.declared_value)}"
+    
     package_info = [
         ['Package Type:', shipment.package_type, 'Service:', shipment.service_type.name],  # Shortened "Service Type"
         ['Weight:', f"{shipment.weight} kg", 'Dimensions:', f"{shipment.length}x{shipment.width}x{shipment.height} cm"],
-        ['Declared Value:', f"${shipment.declared_value:,.2f}", '', ''],
+        ['Declared Value:', formatted_declared_value, '', ''],
     ]
 
     package_table = Table(package_info, colWidths=[1.3*inch, 2.4*inch, 1.3*inch, 2.7*inch])
@@ -514,19 +517,20 @@ def generate_shipment_receipt(shipment):
     # Cost breakdown
     elements.append(Paragraph('COST BREAKDOWN', styles['SectionHeader']))
     
+    # Use the existing format_decimal function for all currency values
     cost_data = [
-        ['Weight Charge:', f"${shipment.weight_charge:,.2f}"],
-        ['Additional Charges:', f"${shipment.total_additional_charges:,.2f}"],
-        ['Extras:', f"${shipment.extras_charges:,.2f}"],
-        ['Delivery Charge:', f"${shipment.delivery_charge:,.2f}"]
+        ['Weight Charge:', f"${format_decimal(shipment.weight_charge)}"],
+        ['Additional Charges:', f"${format_decimal(shipment.total_additional_charges)}"],
+        ['Extras:', f"${format_decimal(shipment.extras_charges)}"],
+        ['Delivery Charge:', f"${format_decimal(shipment.delivery_charge)}"]
     ]
 
     # Add COD charge if applicable
     if shipment.payment_method == 'COD' and shipment.cod_amount > 0:
-        cost_data.append(['COD Charge (5%):', f"${shipment.cod_amount:,.2f}"])
+        cost_data.append(['COD Charge (5%):', f"${format_decimal(shipment.cod_amount)}"])
 
     # Add total cost as the final row
-    cost_data.append(['Total Cost:', f"${shipment.total_cost:,.2f}"])
+    cost_data.append(['Total Cost:', f"${format_decimal(shipment.total_cost)}"])
 
     cost_table = Table(cost_data, colWidths=[5.7*inch, 2*inch])
     cost_table.setStyle(TableStyle([

@@ -538,8 +538,29 @@ class ShipmentMessageSerializer(serializers.Serializer):
             'package_type': getattr(shipment, 'package_type', 'Package'),
             'weight': f"{getattr(shipment, 'weight', 'N/A')}",
             'dimensions': dimensions,
-            'declared_value': f"RM {float(getattr(shipment, 'declared_value', '0.00')):,.2f}",
-            'total_cost': f"RM {total_cost:,.2f}",
+        }
+        
+        # Handle declared_value safely
+        try:
+            declared_value = getattr(shipment, 'declared_value', '0.00')
+            if declared_value is None:
+                declared_value = '0.00'
+            declared_value_float = float(str(declared_value).replace(',', ''))
+            data['declared_value'] = f"RM {declared_value_float:,.2f}"
+        except (ValueError, TypeError):
+            data['declared_value'] = f"RM {getattr(shipment, 'declared_value', '0.00')}"
+        
+        # Handle total_cost safely
+        try:
+            if total_cost is None:
+                total_cost = '0.00'
+            total_cost_float = float(str(total_cost).replace(',', ''))
+            data['total_cost'] = f"RM {total_cost_float:,.2f}"
+        except (ValueError, TypeError):
+            data['total_cost'] = f"RM {total_cost}"
+        
+        # Add other fields
+        data.update({
             'converted_cost': converted_cost,
             'status': status_display,
             'payment_method': payment_method_display,
@@ -547,7 +568,7 @@ class ShipmentMessageSerializer(serializers.Serializer):
             'current_location': getattr(shipment, 'current_location', 'In processing'),
             'estimated_delivery': estimated_delivery,
             'description': getattr(shipment, 'description', ''),
-        }
+        })
         
         # Add user credentials if requested
         if include_credentials and message_type == 'sender_notification':
@@ -582,8 +603,17 @@ class ShipmentMessageSerializer(serializers.Serializer):
         sender_name = getattr(shipment, 'sender_name', '')
         
         # Convert total cost to NGN if not empty
-        total_cost = getattr(shipment, 'total_cost', Decimal('0.00'))
-        formatted_cost = f"RM {total_cost:,.2f}"
+        total_cost = getattr(shipment, 'total_cost', '0.00')
+        if total_cost is None:
+            total_cost = '0.00'
+            
+        # Ensure total_cost is a numeric type before formatting
+        try:
+            total_cost_str = str(total_cost).replace(',', '')
+            total_cost_float = float(total_cost_str)
+            formatted_cost = f"RM {total_cost_float:,.2f}"
+        except (ValueError, TypeError):
+            formatted_cost = f"RM {total_cost}"
         
         # Attempt to convert to NGN
         converted_cost = ""
@@ -592,17 +622,24 @@ class ShipmentMessageSerializer(serializers.Serializer):
             base_currency_code = 'MYR'  # Default base currency
             target_currency_code = 'NGN'
             
-            # Try to get both currencies
+            # Convert the total cost to a valid decimal for conversion
             try:
-                base_currency = Currency.objects.get(code=base_currency_code)
-                target_currency = Currency.objects.get(code=target_currency_code)
+                total_cost_decimal = Decimal(str(total_cost).replace(',', ''))
                 
-                # Convert amount using the same logic as in CurrencyConversionAPIView
-                amount_in_myr = total_cost / base_currency.conversion_rate
-                converted_amount = amount_in_myr * target_currency.conversion_rate
-                converted_cost = f"NGN {round(converted_amount, 2):,.2f}"
-            except Currency.DoesNotExist:
-                # If currency not found, leave converted cost empty
+                # Try to get both currencies
+                try:
+                    base_currency = Currency.objects.get(code=base_currency_code)
+                    target_currency = Currency.objects.get(code=target_currency_code)
+                    
+                    # Convert amount using the same logic as in CurrencyConversionAPIView
+                    amount_in_myr = total_cost_decimal / base_currency.conversion_rate
+                    converted_amount = amount_in_myr * target_currency.conversion_rate
+                    converted_cost = f"NGN {round(converted_amount, 2):,.2f}"
+                except Currency.DoesNotExist:
+                    # If currency not found, leave converted cost empty
+                    pass
+            except (ValueError, TypeError, InvalidOperation, ArithmeticError):
+                # Handle case where total_cost can't be converted to Decimal
                 pass
         except ImportError:
             # If Currency model can't be imported, leave converted cost empty
@@ -620,7 +657,17 @@ class ShipmentMessageSerializer(serializers.Serializer):
             if all([hasattr(shipment, attr) for attr in ['length', 'width', 'height']]):
                 message += f"- Dimensions: {shipment.length} × {shipment.width} × {shipment.height} cm\n"
             
-            message += f"- Declared Value: RM{getattr(shipment, 'declared_value', '0.00')}\n"
+            # Ensure declared_value is properly formatted
+            try:
+                declared_value = getattr(shipment, 'declared_value', '0.00')
+                if declared_value is None:
+                    declared_value = '0.00'
+                declared_value_str = str(declared_value).replace(',', '')
+                declared_value_float = float(declared_value_str)
+                message += f"- Declared Value: RM{declared_value_float:,.2f}\n"
+            except (ValueError, TypeError):
+                message += f"- Declared Value: RM{getattr(shipment, 'declared_value', '0.00')}\n"
+            
             message += f"- Total Cost: {formatted_cost}\n"
             if converted_cost:
                 message += f"- Total Cost (in Naira): {converted_cost}\n\n"
