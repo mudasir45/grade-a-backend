@@ -76,7 +76,7 @@ class ServiceType(SixDigitIDMixin, models.Model):
     name = models.CharField(max_length=100)  # e.g., Express, Standard, Economy
     description = models.TextField()
     delivery_time = models.CharField(max_length=50)  # e.g., "2-3 business days"
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    # price = models.DecimalField(max_digits=10, decimal_places=2)
     is_active = models.BooleanField(default=True)
 
     def __str__(self):

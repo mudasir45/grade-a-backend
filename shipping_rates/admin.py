@@ -45,16 +45,14 @@ class ShippingZoneAdmin(admin.ModelAdmin):
 @admin.register(ServiceType)
 class ServiceTypeAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'delivery_time', 'price_display',
+        'name', 'delivery_time',
         'is_active', 'id'
     ]
     list_filter = ['is_active']
     search_fields = ['name', 'description']
     readonly_fields = ['id']
     
-    def price_display(self, obj):
-        return format_html('<b>RM {}</b>', obj.price)
-    price_display.short_description = 'Service Price'
+    
 
 @admin.register(WeightBasedRate)
 class WeightBasedRateAdmin(admin.ModelAdmin):
