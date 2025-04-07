@@ -56,8 +56,8 @@ class Migration(migrations.Migration):
             CREATE INDEX accounts_user_default_shipping_method_id ON accounts_user (default_shipping_method_id);
             CREATE INDEX accounts_user_preferred_currency_id ON accounts_user (preferred_currency_id);
             CREATE INDEX accounts_user_country_id ON accounts_user (country_id);
-            CREATE INDEX accounts_user_username_like ON accounts_user (username varchar_pattern_ops);
-            CREATE INDEX accounts_user_phone_number_like ON accounts_user (phone_number varchar_pattern_ops);
+            CREATE INDEX accounts_user_username_like ON accounts_user (username);
+            CREATE INDEX accounts_user_phone_number_like ON accounts_user (phone_number);
             """,
             
             # Reverse SQL - we can't really reverse this operation safely
