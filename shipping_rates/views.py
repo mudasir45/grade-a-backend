@@ -229,6 +229,7 @@ class ShippingRateCalculatorView(APIView):
                 destination_countries=destination,
                 is_active=True
             ).first()
+           
             
             # Build response with route and service details
             response_data = {
@@ -236,12 +237,14 @@ class ShippingRateCalculatorView(APIView):
                     'origin': {
                         'id': origin.id,
                         'name': origin.name,
-                        'code': origin.code
+                        'code': origin.code,
+                        'currency': origin.currency.code if origin.currency else "MYR"
                     },
                     'destination': {
                         'id': destination.id,
                         'name': destination.name,
-                        'code': destination.code
+                        'code': destination.code,
+                        'currency': destination.currency.code if destination.currency else "MYR"
                     }
                 },
                 'service': {

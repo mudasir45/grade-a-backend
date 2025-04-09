@@ -490,7 +490,7 @@ def generate_shipment_receipt(shipment):
     elements.append(Paragraph('SHIPMENT DETAILS', styles['SectionHeader']))
     
     # Use the existing format_decimal function
-    formatted_declared_value = f"${format_decimal(shipment.declared_value)}"
+    formatted_declared_value = f"MYR {format_decimal(shipment.declared_value)}"
     
     package_info = [
         ['Package Type:', shipment.package_type, 'Service:', shipment.service_type.name],  # Shortened "Service Type"
@@ -519,18 +519,18 @@ def generate_shipment_receipt(shipment):
     
     # Use the existing format_decimal function for all currency values
     cost_data = [
-        ['Weight Charge:', f"${format_decimal(shipment.weight_charge)}"],
-        ['Additional Charges:', f"${format_decimal(shipment.total_additional_charges)}"],
-        ['Extras:', f"${format_decimal(shipment.extras_charges)}"],
-        ['Delivery Charge:', f"${format_decimal(shipment.delivery_charge)}"]
+        ['Weight Charge:', f"MYR {format_decimal(shipment.weight_charge)}"],
+        ['Mandatory Charges:', f"MYR {format_decimal(shipment.total_additional_charges)}"],
+        ['Additional Charges:', f"MYR {format_decimal(shipment.extras_charges)}"],
+        ['Delivery Charge:', f"MYR {format_decimal(shipment.delivery_charge)}"]
     ]
 
     # Add COD charge if applicable
     if shipment.payment_method == 'COD' and shipment.cod_amount > 0:
-        cost_data.append(['COD Charge (5%):', f"${format_decimal(shipment.cod_amount)}"])
+        cost_data.append(['COD Charge (5%):', f"MYR {format_decimal(shipment.cod_amount)}"])
 
     # Add total cost as the final row
-    cost_data.append(['Total Cost:', f"${format_decimal(shipment.total_cost)}"])
+    cost_data.append(['Total Cost:', f"MYR {format_decimal(shipment.total_cost)}"])
 
     cost_table = Table(cost_data, colWidths=[5.7*inch, 2*inch])
     cost_table.setStyle(TableStyle([
@@ -551,6 +551,52 @@ def generate_shipment_receipt(shipment):
         ('BOX', (0, -1), (-1, -1), 1, colors.white),
     ]))
     elements.append(cost_table)
+    
+    # Add Extras Details section if extras are associated with the shipment
+    shipment_extras = shipment.shipmentextras_set.all()
+    if shipment_extras.exists():
+        elements.append(Spacer(1, 15))
+        elements.append(Paragraph('ADDITIONAL SERVICES DETAILS', styles['SectionHeader']))
+        
+        extras_data = [
+            ['Service', 'Description', 'Quantity', 'Cost']
+        ]
+        
+        for extra_item in shipment_extras:
+            extra_cost = 0
+            if extra_item.extra.charge_type == 'FIXED':
+                extra_cost = extra_item.extra.value * extra_item.quantity
+            else:  # PERCENTAGE
+                # For percentage based extras, calculate based on appropriate base
+                base_cost = shipment.weight_charge
+                extra_cost = (base_cost * extra_item.extra.value / 100) * extra_item.quantity
+            
+            extras_data.append([
+                extra_item.extra.name,
+                extra_item.extra.description,
+                str(extra_item.quantity),
+                f"MYR {format_decimal(extra_cost)}"
+            ])
+        
+        extras_table = Table(extras_data, colWidths=[1.5*inch, 3.5*inch, 0.7*inch, 1*inch])
+        extras_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a237e')),  # Header row
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f9f9f9')),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#424242')),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+            ('ALIGN', (2, 1), (3, -1), 'CENTER'),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
+        ]))
+        elements.append(extras_table)
 
     # Footer
     footer_text = f"""Thank you for choosing Grade-A Express! | Track your shipment: {shipment.tracking_number}"""
@@ -603,21 +649,21 @@ def generate_receipt_table_data(shipment):
     # Build table data
     table_data = [
         ['Item', 'Amount'],
-        ['Service Charge:', f"${service_charge}"],
-        ['Weight Charge:', f"${weight_charge}"],
-        ['Additional Charges:', f"${total_additional_charges}"],
-        ['Extras Charges:', f"${extras_charges}"],
+        ['Service Charge:', f"MYR {service_charge}"],
+        ['Weight Charge:', f"MYR {weight_charge}"],
+        ['Mandatory Charges:', f"MYR {total_additional_charges}"],
+        ['Additional Charges:', f"MYR {extras_charges}"],
     ]
     
     # Add delivery charge if present
     if shipment.delivery_charge and shipment.delivery_charge > 0:
-        table_data.append(['Delivery Charge:', f"${delivery_charge}"])
+        table_data.append(['Delivery Charge:', f"MYR {delivery_charge}"])
     
     # Add COD charge if present
     if shipment.cod_amount and shipment.cod_amount > 0:
-        table_data.append(['COD Fee:', f"${cod_amount}"])
+        table_data.append(['COD Fee:', f"MYR {cod_amount}"])
     
     # Add total
-    table_data.append(['Total:', f"${total_cost}"])
+    table_data.append(['Total:', f"MYR {total_cost}"])
     
     return table_data 

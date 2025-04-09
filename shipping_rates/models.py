@@ -197,3 +197,32 @@ class Currency(models.Model):
 
     def __str__(self):
         return self.code
+    
+    
+class DynamicRate(SixDigitIDMixin, models.Model):
+    class ChargeType(models.TextChoices):
+        FIXED = 'FIXED', _('Fixed Amount')
+        PERCENTAGE = 'PERCENTAGE', _('Percentage of Base Cost')
+    class RateType(models.TextChoices):
+        INSURANCE = 'INSURANCE', _('Insurance')
+        BUY4ME_FEE = 'BUY4ME_FEE', _('Buy4Me Fee')
+        OTHER = 'OTHER', _('Other')
+        
+    rate_type = models.CharField(max_length=100, choices=RateType.choices, default=RateType.INSURANCE  )
+    charge_type = models.CharField(max_length=100, choices=ChargeType.choices, default=ChargeType.FIXED)
+    value = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.rate_type
+    
+    
+    
+    
+    
+    
+    
+    
+    

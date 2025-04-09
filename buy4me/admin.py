@@ -255,26 +255,17 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
             city_id = request.POST.get('city_id')
             try:
                 city = City.objects.get(id=city_id, is_active=True)
-                updated = queryset.update(
-                    city=city,
-                    city_delivery_charge=city.delivery_charge
-                )
+                update_count = 0
                 
-                # For each updated request, try to assign a driver
+                # Update each request individually to trigger save method and recalculate total
                 for buy4me_request in queryset:
-                    # Get active drivers assigned to this city
-                    driver_profiles = DriverProfile.objects.filter(
-                        cities=city,
-                        is_active=True
-                    )
-                    driver_profile = driver_profiles.first()
-                    if driver_profile:
-                        buy4me_request.driver = driver_profile.user
-                        buy4me_request.save(update_fields=['driver'])
+                    buy4me_request.city = city
+                    buy4me_request.save()  # This will update city_delivery_charge and recalculate total
+                    update_count += 1
                 
                 self.message_user(
                     request,
-                    f"{updated} requests assigned to city {city.name}",
+                    f"{update_count} requests assigned to city {city.name}",
                     messages.SUCCESS
                 )
                 return None

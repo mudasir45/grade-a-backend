@@ -121,6 +121,9 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
             if driver_profile:
                 self.driver = driver_profile.user
         
+        # Store old delivery charge to detect changes
+        old_charge = self.city_delivery_charge
+        
         # If city is set, always update the city_delivery_charge to match the city's delivery charge
         if self.city:
             self.city_delivery_charge = self.city.delivery_charge
@@ -128,7 +131,12 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
         elif self.city is None:
             self.city_delivery_charge = Decimal('0.00')
             
+        # First save the model
         super().save(*args, **kwargs)
+        
+        # If delivery charge changed, recalculate total cost
+        if old_charge != self.city_delivery_charge:
+            self.calculate_total_cost()
 
 
 class Buy4MeItem(SixDigitIDMixin, models.Model):
@@ -171,3 +179,25 @@ class Buy4MeItem(SixDigitIDMixin, models.Model):
         if self.quantity is not None and self.unit_price is not None:
             return self.quantity * self.unit_price
         return Decimal('0.00')
+
+    def save(self, *args, **kwargs):
+        # First check if this is an existing instance being updated
+        if self.pk:
+            # Get the old instance from the database
+            old_instance = Buy4MeItem.objects.get(pk=self.pk)
+            # Check if any cost-related fields have changed
+            price_changed = (
+                old_instance.quantity != self.quantity or
+                old_instance.unit_price != self.unit_price or
+                old_instance.store_to_warehouse_delivery_charge != self.store_to_warehouse_delivery_charge
+            )
+        else:
+            # New instance, price has effectively changed
+            price_changed = True
+            
+        # Save the item
+        super().save(*args, **kwargs)
+        
+        # If cost-related fields changed, recalculate the total cost of the parent request
+        if price_changed and self.buy4me_request:
+            self.buy4me_request.calculate_total_cost()
