@@ -204,11 +204,11 @@ class DynamicRate(SixDigitIDMixin, models.Model):
         FIXED = 'FIXED', _('Fixed Amount')
         PERCENTAGE = 'PERCENTAGE', _('Percentage of Base Cost')
     class RateType(models.TextChoices):
-        INSURANCE = 'INSURANCE', _('Insurance')
+        COD_FEE = 'COD_FEE', _('COD Fee')
         BUY4ME_FEE = 'BUY4ME_FEE', _('Buy4Me Fee')
         OTHER = 'OTHER', _('Other')
         
-    rate_type = models.CharField(max_length=100, choices=RateType.choices, default=RateType.INSURANCE  )
+    rate_type = models.CharField(max_length=100, choices=RateType.choices, default=RateType.COD_FEE  )
     charge_type = models.CharField(max_length=100, choices=ChargeType.choices, default=ChargeType.FIXED)
     value = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     is_active = models.BooleanField(default=True)

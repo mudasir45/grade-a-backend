@@ -1,11 +1,14 @@
+from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.db.models import Count, Sum
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
-from accounts.models import City, DriverProfile, User
+from accounts.models import User
 
 from .models import Buy4MeItem, Buy4MeRequest
 
@@ -50,85 +53,338 @@ class DriverFilter(admin.SimpleListFilter):
         return queryset
 
 
-class CityFilter(admin.SimpleListFilter):
-    """Filter Buy4Me requests by city"""
-    title = 'City'
-    parameter_name = 'city'
+class DateRangeFilter(admin.SimpleListFilter):
+    """Filter requests by date range"""
+    title = 'Date Range'
+    parameter_name = 'date_range'
     
     def lookups(self, request, model_admin):
-        # Get all active cities
-        cities = City.objects.filter(is_active=True).values_list('id', 'name')
-        return [('none', 'No city')] + [(str(id), name) for id, name in cities]
+        return (
+            ('today', 'Today'),
+            ('yesterday', 'Yesterday'),
+            ('this_week', 'This Week'),
+            ('last_week', 'Last Week'),
+            ('this_month', 'This Month'),
+            ('last_month', 'Last Month'),
+            ('this_year', 'This Year'),
+        )
     
     def queryset(self, request, queryset):
-        if self.value() == 'none':
-            return queryset.filter(city=None)
-        if self.value():
-            return queryset.filter(city_id=self.value())
+        today = timezone.now().date()
+        
+        if self.value() == 'today':
+            return queryset.filter(created_at__date=today)
+        
+        if self.value() == 'yesterday':
+            yesterday = today - timezone.timedelta(days=1)
+            return queryset.filter(created_at__date=yesterday)
+        
+        if self.value() == 'this_week':
+            start_of_week = today - timezone.timedelta(days=today.weekday())
+            return queryset.filter(created_at__date__gte=start_of_week)
+        
+        if self.value() == 'last_week':
+            start_of_this_week = today - timezone.timedelta(days=today.weekday())
+            start_of_last_week = start_of_this_week - timezone.timedelta(days=7)
+            end_of_last_week = start_of_this_week - timezone.timedelta(days=1)
+            return queryset.filter(created_at__date__gte=start_of_last_week, created_at__date__lte=end_of_last_week)
+        
+        if self.value() == 'this_month':
+            return queryset.filter(created_at__month=today.month, created_at__year=today.year)
+        
+        if self.value() == 'last_month':
+            last_month = today.month - 1 if today.month > 1 else 12
+            year = today.year if today.month > 1 else today.year - 1
+            return queryset.filter(created_at__month=last_month, created_at__year=year)
+        
+        if self.value() == 'this_year':
+            return queryset.filter(created_at__year=today.year)
+        
         return queryset
 
 
 class Buy4MeItemInline(admin.TabularInline):
     model = Buy4MeItem
-    extra = 0
-    readonly_fields = ['total_price_display']
+    extra = 1
+    classes = ('wide',)
+    verbose_name = "Product Item"
+    verbose_name_plural = "Product Items"
     fields = [
         'product_name', 'product_url', 'quantity',
-        'unit_price', 'currency', 'total_price_display'
+        'unit_price', 'currency', 'total_price' 
     ]
-
-    def total_price_display(self, obj):
-        if obj.total_price:
-            return format_html('<b>{} {}</b>', obj.currency, obj.total_price)
+    readonly_fields = ['total_price']
+    
+    formfield_overrides = {
+        models.CharField: {'widget': forms.TextInput(attrs={'class': 'vTextField'})},
+        models.TextField: {'widget': forms.Textarea(attrs={'rows': 3})},
+        models.URLField: {'widget': forms.URLInput(attrs={'class': 'vURLField'})},
+        models.DecimalField: {'widget': forms.NumberInput(attrs={'step': '0.01'})},
+        models.PositiveIntegerField: {'widget': forms.NumberInput(attrs={'min': '1'})},
+    }
+    
+    def total_price(self, obj):
+        if obj and obj.quantity and obj.unit_price:
+            return f"{obj.currency} {obj.total_price:.2f}"
         return '-'
-    total_price_display.short_description = 'Total Price'
+    total_price.short_description = 'Total'
+
+
+class Buy4MeStatusFilter(admin.SimpleListFilter):
+    """Filter Buy4Me requests by common status groups"""
+    title = 'Status Group'
+    parameter_name = 'status_group'
+    
+    def lookups(self, request, model_admin):
+        return (
+            ('active', 'Active (Not Completed)'),
+            ('in_process', 'In Process'),
+            ('delivery', 'In Delivery'),
+            ('completed', 'Completed'),
+            ('cancelled', 'Cancelled'),
+        )
+    
+    def queryset(self, request, queryset):
+        if self.value() == 'active':
+            return queryset.exclude(status__in=['COMPLETED', 'CANCELLED'])
+        
+        if self.value() == 'in_process':
+            return queryset.filter(status__in=['SUBMITTED', 'ORDER_PLACED'])
+        
+        if self.value() == 'delivery':
+            return queryset.filter(status__in=['IN_TRANSIT', 'WAREHOUSE_ARRIVED', 'SHIPPED_TO_CUSTOMER'])
+        
+        if self.value() == 'completed':
+            return queryset.filter(status='COMPLETED')
+        
+        if self.value() == 'cancelled':
+            return queryset.filter(status='CANCELLED')
+        
+        return queryset
+
 
 @admin.register(Buy4MeRequest)
 class Buy4MeRequestAdmin(admin.ModelAdmin):
     list_display = [
-        'id', 'status_badge', 
-        'user', 'staff_link', 'driver_link', 'city_link',
-        'total_cost_display', 'delivery_charge_display', 'created_at'
+        'id', 'status_badge', 'payment_status_badge',
+        'user_info', 'items_count',
+        'total_cost_display', 'created_at_display', 'actions_column'
     ]
-    list_filter = ['status', 'created_at', StaffAssignmentFilter, DriverFilter, CityFilter]
+    list_filter = [
+        Buy4MeStatusFilter, 'payment_status', DateRangeFilter,
+        StaffAssignmentFilter, DriverFilter, 'user'
+    ]
     search_fields = [
-        'id', 'user__username', 'user__email',
+        'id', 'user__username', 'user__email', 'user__first_name', 'user__last_name',
         'staff__username', 'staff__email',
-        'driver__username', 'driver__email',
-        'city__name'
+        'driver__username', 'driver__email', 'shipping_address'
     ]
-    inlines = [Buy4MeItemInline]
-    readonly_fields = ['total_cost', 'created_at', 'updated_at', 'driver', 'city_delivery_charge', 'cost_breakdown_display']
-    actions = ['assign_to_driver', 'unassign_driver', 'assign_to_me', 'unassign_staff', 'assign_to_city']
+    readonly_fields = [
+        'id', 'total_cost', 'service_fee', 'service_fee_percentage_display',
+        'created_at', 'updated_at', 'driver', 'cost_breakdown_display',
+        'items_summary'
+    ]
+    actions = [
+        'assign_to_me', 'unassign_staff', 'mark_as_order_placed',
+        'mark_as_in_transit', 'mark_as_completed', 'mark_as_cancelled'
+    ]
+    save_on_top = True
+    list_per_page = 25
     
+    # Using tabs
     fieldsets = (
-        ('Assignment Information', {
+        ('Order Information', {
             'fields': (
+                # Basic Info
+                'id', 
+                'created_at', 
+                'updated_at',
+                'status', 
+                'payment_status',
+                
+                # Assignment
                 'user',
                 'staff',
                 'driver',
-                'city',
-            ),
-            'classes': ('wide',),
-            'description': 'Manage user, staff, driver, and city assignments'
-        }),
-        ('Status Information', {
-            'fields': (
-                'status', 'created_at', 'updated_at'
-            )
-        }),
-        ('Shipping Information', {
-            'fields': ('shipping_address', 'notes')
-        }),
-        ('Cost Information', {
-            'fields': (
+                
+                # Shipping
+                'shipping_address', 
+                'notes',
+                
+                # Financial Info
                 'cost_breakdown_display',
-                'city_delivery_charge',
+                'service_fee_percentage_display', 
+                'service_fee',
                 'total_cost',
             ),
-            'description': 'Cost breakdown including delivery charge and total'
+            'classes': ('wide',),
+            'description': 'Complete information about this Buy4Me request'
         }),
     )
+    
+    inlines = [Buy4MeItemInline]
+    
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        queryset = queryset.annotate(
+            item_count=Count('items')
+        )
+        return queryset
+    
+    def items_count(self, obj):
+        count = getattr(obj, 'item_count', obj.items.count())
+        url = reverse('admin:buy4me_buy4meitem_changelist')
+        return format_html(
+            '<a href="{}?buy4me_request__id={}" class="button" style="background-color: #417690; padding: 5px 10px; color: white; border-radius: 4px; text-decoration: none;">{} items</a>',
+            url, obj.id, count
+        )
+    items_count.short_description = 'Items'
+    items_count.admin_order_field = 'item_count'
+    
+    def items_summary(self, obj):
+        items = obj.items.all()
+        if not items:
+            return "No items yet"
+        
+        html = """
+        <style>
+            .items-summary {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            .items-summary th, .items-summary td {
+                padding: 8px;
+                text-align: left;
+                border-bottom: 1px solid #ddd;
+            }
+            .items-summary th {
+                background-color: #f5f5f5;
+            }
+            .items-summary tr:hover {
+                background-color: #f9f9f9;
+            }
+            .items-summary .view-btn {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                text-align: center;
+                text-decoration: none;
+                display: inline-block;
+                border-radius: 4px;
+            }
+        </style>
+        <table class="items-summary">
+            <tr>
+                <th>Product</th>
+                <th>Quantity</th>
+                <th>Unit Price</th>
+                <th>Total</th>
+                <th>Link</th>
+            </tr>
+        """
+        
+        for item in items:
+            html += f"""
+            <tr>
+                <td>{item.product_name}</td>
+                <td>{item.quantity}</td>
+                <td>{item.currency} {item.unit_price}</td>
+                <td><b>{item.currency} {item.total_price}</b></td>
+                <td><a href="{item.product_url}" target="_blank" class="view-btn">View</a></td>
+            </tr>
+            """
+        
+        html += "</table>"
+        return mark_safe(html)
+    items_summary.short_description = 'Items Summary'
+    
+    def user_info(self, obj):
+        if not obj.user:
+            return "-"
+        user_url = reverse('admin:accounts_user_change', args=[obj.user.id])
+        name = f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.username
+        return format_html(
+            '<div><a href="{}" style="font-weight: bold;">{}</a></div>'
+            '<div style="color: #666;">{}</div>',
+            user_url, name, obj.user.email
+        )
+    user_info.short_description = 'Customer'
+    user_info.admin_order_field = 'user__username'
+    
+    def created_at_display(self, obj):
+        return format_html(
+            '<div>{}</div><div style="color: #666; font-size: 12px;">{} days ago</div>',
+            obj.created_at.strftime('%Y-%m-%d %H:%M'),
+            (timezone.now().date() - obj.created_at.date()).days
+        )
+    created_at_display.short_description = 'Created'
+    created_at_display.admin_order_field = 'created_at'
+    
+    def actions_column(self, obj):
+        view_url = reverse('admin:buy4me_buy4merequest_change', args=[obj.id])
+        
+        # Status dependent actions
+        action_buttons = ""
+        if obj.status not in ['COMPLETED', 'CANCELLED']:
+            if obj.status == 'DRAFT':
+                action_buttons += self._action_button("Mark Submitted", "submit", obj.id, "info")
+            elif obj.status == 'SUBMITTED':
+                action_buttons += self._action_button("Order Placed", "order_placed", obj.id, "primary")
+            elif obj.status == 'ORDER_PLACED':
+                action_buttons += self._action_button("In Transit", "in_transit", obj.id, "warning")
+            elif obj.status in ['IN_TRANSIT', 'WAREHOUSE_ARRIVED']:
+                action_buttons += self._action_button("Complete", "complete", obj.id, "success")
+        
+        html = f"""
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+            {action_buttons}
+        </div>
+        """
+        return mark_safe(html)
+    actions_column.short_description = 'Quick Actions'
+    
+    def _action_button(self, text, action, obj_id, color="primary"):
+        colors = {
+            "primary": "#007bff",
+            "success": "#28a745",
+            "info": "#17a2b8",
+            "warning": "#ffc107",
+            "danger": "#dc3545"
+        }
+        return f"""
+        <a href="javascript:void(0);" 
+           onclick="confirmAction('{action}', {obj_id})"
+           style="background-color: {colors.get(color, '#6c757d')}; 
+                  color: white; 
+                  padding: 5px 10px; 
+                  border-radius: 4px; 
+                  text-decoration: none; 
+                  font-size: 12px;
+                  text-align: center;">
+            {text}
+        </a>
+        """
+    
+    def payment_status_badge(self, obj):
+        colors = {
+            'PENDING': '#ffc107',  # Yellow
+            'PAID': '#28a745',     # Green
+            'COD': '#17a2b8',      # Blue
+            'COD_PAID': '#0d6efd',  # Darker blue
+            'REFUNDED': '#dc3545',  # Red
+            'CANCELLED': '#6c757d'  # Gray
+        }
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 7px; border-radius: 12px; font-size: 12px;">{}</span>',
+            colors.get(obj.payment_status, '#6c757d'),
+            obj.get_payment_status_display()
+        )
+    payment_status_badge.short_description = 'Payment'
+    
+    def service_fee_percentage_display(self, obj):
+        return f"{obj.service_fee_percentage}%" 
+    service_fee_percentage_display.short_description = 'Service Fee %'
     
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -167,13 +423,6 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
         return "-"
     driver_link.short_description = 'Driver'
     
-    def city_link(self, obj):
-        if obj.city:
-            url = reverse('admin:accounts_city_change', args=[obj.city.id])
-            return format_html('<a href="{}">{}</a>', url, obj.city.name)
-        return "-"
-    city_link.short_description = 'City'
-    
     def assign_to_me(self, request, queryset):
         """Assign selected requests to the current user if they have staff status"""
         if not request.user.is_staff:
@@ -198,29 +447,44 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
         self.message_user(request, f"{updated} requests unassigned from driver.")
     unassign_driver.short_description = "Unassign driver from selected requests"
     
-    def assign_to_driver(self, request, queryset):
-        """Action to assign selected requests to a driver"""
-        self.message_user(
-            request,
-            "Drivers should be assigned automatically through city selection. "
-            "Please use the 'Assign to City' action instead.",
-            messages.WARNING
-        )
-        return None
+    def mark_as_order_placed(self, request, queryset):
+        """Mark selected requests as ORDER_PLACED"""
+        updated = queryset.filter(status='SUBMITTED').update(status='ORDER_PLACED')
+        self.message_user(request, f"{updated} requests marked as Order Placed.")
+    mark_as_order_placed.short_description = "Mark selected as Order Placed"
+    
+    def mark_as_in_transit(self, request, queryset):
+        """Mark selected requests as IN_TRANSIT"""
+        updated = queryset.filter(status='ORDER_PLACED').update(status='IN_TRANSIT')
+        self.message_user(request, f"{updated} requests marked as In Transit.")
+    mark_as_in_transit.short_description = "Mark selected as In Transit"
+    
+    def mark_as_completed(self, request, queryset):
+        """Mark selected requests as COMPLETED"""
+        updated = queryset.filter(status__in=['IN_TRANSIT', 'WAREHOUSE_ARRIVED', 'SHIPPED_TO_CUSTOMER']).update(status='COMPLETED')
+        self.message_user(request, f"{updated} requests marked as Completed.")
+    mark_as_completed.short_description = "Mark selected as Completed"
+    
+    def mark_as_cancelled(self, request, queryset):
+        """Mark selected requests as CANCELLED"""
+        updated = queryset.exclude(status__in=['COMPLETED', 'CANCELLED']).update(status='CANCELLED')
+        self.message_user(request, f"{updated} requests marked as Cancelled.")
+    mark_as_cancelled.short_description = "Mark selected as Cancelled"
     
     def status_badge(self, obj):
         colors = {
-            'DRAFT': 'secondary',
-            'SUBMITTED': 'info',
-            'ORDER_PLACED': 'primary',
-            'IN_TRANSIT': 'warning',
-            'WAREHOUSE_ARRIVED': 'info',
-            'SHIPPED_TO_CUSTOMER': 'primary',
-            'COMPLETED': 'success'
+            'DRAFT': '#6c757d',      # Gray
+            'SUBMITTED': '#17a2b8',  # Blue
+            'ORDER_PLACED': '#0d6efd', # Purple
+            'IN_TRANSIT': '#ffc107',  # Yellow
+            'WAREHOUSE_ARRIVED': '#fd7e14',  # Orange
+            'SHIPPED_TO_CUSTOMER': '#0dcaf0',  # Light blue
+            'COMPLETED': '#28a745',  # Green
+            'CANCELLED': '#dc3545'   # Red
         }
         return format_html(
-            '<span class="badge badge-{}">{}</span>',
-            colors.get(obj.status, 'secondary'),
+            '<span style="background-color: {}; color: white; padding: 3px 7px; border-radius: 12px; font-size: 12px;">{}</span>',
+            colors.get(obj.status, '#6c757d'),
             obj.get_status_display()
         )
     status_badge.short_description = 'Status'
@@ -234,7 +498,7 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
         # Build detailed breakdown
         breakdown = f"""
             Items Total: ${items_total:.2f}<br>
-            <b>Delivery Charge: ${obj.city_delivery_charge:.2f}</b><br>
+            <b>Service Fee: ${obj.service_fee:.2f}</b><br>
             <b>Total: ${obj.total_cost:.2f}</b>
         """
         
@@ -243,77 +507,8 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
             breakdown,
             obj.total_cost
         )
-    total_cost_display.short_description = 'Total Cost'
+    total_cost_display.short_description = 'Total'
     
-    def delivery_charge_display(self, obj):
-        return format_html('<b>${}</b>', obj.city_delivery_charge)
-    delivery_charge_display.short_description = 'Delivery Charge'
-    
-    def assign_to_city(self, request, queryset):
-        """Action to assign selected requests to a city"""
-        if request.POST.get('city_id'):
-            city_id = request.POST.get('city_id')
-            try:
-                city = City.objects.get(id=city_id, is_active=True)
-                update_count = 0
-                
-                # Update each request individually to trigger save method and recalculate total
-                for buy4me_request in queryset:
-                    buy4me_request.city = city
-                    buy4me_request.save()  # This will update city_delivery_charge and recalculate total
-                    update_count += 1
-                
-                self.message_user(
-                    request,
-                    f"{update_count} requests assigned to city {city.name}",
-                    messages.SUCCESS
-                )
-                return None
-            except City.DoesNotExist:
-                self.message_user(
-                    request,
-                    "Selected city not found or is not active",
-                    messages.ERROR
-                )
-                return None
-        
-        # Get all active cities
-        cities = City.objects.filter(is_active=True).values_list('id', 'name')
-        
-        if not cities:
-            self.message_user(
-                request,
-                "No active cities found in the system.",
-                messages.ERROR
-            )
-            return None
-        
-        # Create the HTML for the city selection form
-        city_options = "\n".join(
-            f'<option value="{id}">{name}</option>'
-            for id, name in cities
-        )
-        
-        # Return a custom admin action page
-        return format_html("""
-            <form action="" method="post">
-                <input type="hidden" name="action" value="assign_to_city" />
-                <input type="hidden" name="_selected_action" value="{}" />
-                {}
-                <p>Select a city to assign the selected requests to:</p>
-                <select name="city_id">
-                    {}
-                </select>
-                <input type="submit" value="Assign City" />
-            </form>
-        """,
-        ",".join(str(obj.pk) for obj in queryset),
-        request.POST.get('csrfmiddlewaretoken', ''),
-        city_options
-        )
-    
-    assign_to_city.short_description = "Assign selected requests to city"
-
     def cost_breakdown_display(self, obj):
         """Display a formatted cost breakdown table"""
         # Get items total
@@ -376,7 +571,7 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
                 <td>$%.2f</td>
             </tr>
             <tr>
-                <td>Delivery Charge</td>
+                <td>Service Fee</td>
                 <td>$%.2f</td>
             </tr>
             <tr class="total">
@@ -387,31 +582,86 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
         """
         
         # Format the HTML with the values
-        html = html % (items_total, obj.city_delivery_charge, obj.total_cost)
+        html = html % (items_total, obj.service_fee, obj.total_cost)
         
         return mark_safe(html)
     cost_breakdown_display.short_description = 'Cost Breakdown'
+    
+    class Media:
+        js = ('js/buy4me_admin.js',)
+        css = {
+            'all': ('css/buy4me_admin.css',)
+        }
+
 
 @admin.register(Buy4MeItem)
 class Buy4MeItemAdmin(admin.ModelAdmin):
     list_display = [
-        'id', 'request_link', 'product_name',
+        'id', 'request_link', 'product_name', 
         'quantity', 'unit_price_display',
-        'total_price_display'
+        'total_price_display', 'view_product'
     ]
-    list_filter = ['created_at']
+    list_filter = ['created_at', 'buy4me_request__status']
     search_fields = [
-        'product_name', 'buy4me_request__id',
-        'buy4me_request__user__username'
+        'product_name', 'product_url', 'buy4me_request__id',
+        'buy4me_request__user__username', 'buy4me_request__user__email'
     ]
-    readonly_fields = ['created_at', 'updated_at']
+    readonly_fields = ['created_at', 'updated_at', 'product_preview']
+    fieldsets = (
+        ('Product Information', {
+            'fields': (
+                'product_name', 'product_url', 'product_preview',
+                ('quantity', 'unit_price', 'currency'),
+                'color', 'size', 'notes'
+            )
+        }),
+        ('Shipping & Fees', {
+            'fields': ('store_to_warehouse_delivery_charge',)
+        }),
+        ('Request Information', {
+            'fields': ('buy4me_request', 'created_at', 'updated_at')
+        }),
+    )
+    
+    def product_preview(self, obj):
+        if obj.product_url:
+            return format_html(
+                '<a href="{}" target="_blank" class="button" style="background-color: #28a745; padding: 7px 15px; color: white; border-radius: 4px; text-decoration: none; display: inline-block; margin-top: 10px;">View Product Online</a>',
+                obj.product_url
+            )
+        return 'No URL provided'
+    product_preview.short_description = 'Product Preview'
+    
+    def view_product(self, obj):
+        if obj.product_url:
+            return format_html(
+                '<a href="{}" target="_blank" class="button" style="background-color: #28a745; padding: 5px 10px; color: white; border-radius: 4px; text-decoration: none;">View</a>',
+                obj.product_url
+            )
+        return '-'
+    view_product.short_description = 'View'
     
     def request_link(self, obj):
-        url = f"../buy4merequest/{obj.buy4me_request.id}"
+        url = reverse('admin:buy4me_buy4merequest_change', args=[obj.buy4me_request.id])
+        status_colors = {
+            'DRAFT': '#6c757d',
+            'SUBMITTED': '#17a2b8',
+            'ORDER_PLACED': '#0d6efd',
+            'IN_TRANSIT': '#ffc107',
+            'WAREHOUSE_ARRIVED': '#fd7e14',
+            'SHIPPED_TO_CUSTOMER': '#0dcaf0',
+            'COMPLETED': '#28a745',
+            'CANCELLED': '#dc3545'
+        }
+        status_color = status_colors.get(obj.buy4me_request.status, '#6c757d')
+        
         return format_html(
-            '<a href="{}">{}</a>',
+            '<div><a href="{}" style="font-weight: bold;">{}</a></div>'
+            '<div><span style="background-color: {}; color: white; padding: 2px 5px; border-radius: 10px; font-size: 10px;">{}</span></div>',
             url,
-            obj.buy4me_request.id
+            obj.buy4me_request.id,
+            status_color,
+            obj.buy4me_request.get_status_display()
         )
     request_link.short_description = 'Request'
     

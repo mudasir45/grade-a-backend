@@ -149,7 +149,7 @@ class UserViewSet(viewsets.ModelViewSet):
         
         # Active requests (DRAFT, SUBMITTED)
         active_count = user_requests.filter(
-            status__in=['DRAFT', 'SUBMITTED']
+            status__in=['DRAFT', 'SUBMITTED', 'PROCESSING']
         ).count()
         
         # Pending payments
@@ -274,6 +274,7 @@ class UserViewSet(viewsets.ModelViewSet):
         )
     }
 )
+
 class SignUpView(generics.CreateAPIView):
     serializer_class = UserCreateSerializer
     permission_classes = [permissions.AllowAny]
@@ -382,16 +383,14 @@ class ContactView(generics.CreateAPIView):
         email.attach_alternative(html_content, "text/html")
         email.send()
         
-        
-        
-        
+              
 class StoresView(APIView):
 
     permission_classes = [permissions.AllowAny]
     
     def get(self, request):
         stores = Store.objects.filter(is_active=True)
-        serializer = StoreSerializer(stores, many=True)
+        serializer = StoreSerializer(stores, many=True, context={'request': request})
         return Response(serializer.data)
     
     

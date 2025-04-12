@@ -641,12 +641,24 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         
         # Add COD charge if applicable
         if obj.payment_method == 'COD' and obj.cod_amount > 0:
+            try:
+                # Import here to avoid circular imports
+                from shipping_rates.models import DynamicRate
+                cod_rate = DynamicRate.objects.filter(
+                    rate_type='COD_FEE',
+                    charge_type='PERCENTAGE',
+                    is_active=True
+                ).first()
+                cod_percentage = cod_rate.value if cod_rate else 5  # Default to 5% if not found
+            except Exception:
+                cod_percentage = 5  # Default to 5% if error occurs
+                
             cod_html = """
             <tr>
-                <td>COD Charge (5%%)</td>
+                <td>COD Charge (%s%%)</td>
                 <td>$%.2f</td>
             </tr>
-            """ % obj.cod_amount
+            """ % (cod_percentage, obj.cod_amount)
             html += cod_html
         
         # Add delivery charge and total

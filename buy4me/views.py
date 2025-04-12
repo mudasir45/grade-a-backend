@@ -1,3 +1,6 @@
+from typing import Any, TypeVar, cast
+
+from django.contrib.auth import get_user_model
 from django.db.models import Prefetch
 from django.shortcuts import render
 from drf_spectacular.utils import OpenApiParameter, extend_schema
@@ -11,27 +14,16 @@ from .serializers import (Buy4MeItemSerializer, Buy4MeRequestCreateSerializer,
                           Buy4MeRequestSerializer,
                           Buy4MeRequestUpdateSerializer)
 
+User = get_user_model()
+T = TypeVar('T')
+
 # Create your views here.
 
 @extend_schema(tags=['buy4me'])
 class Buy4MeRequestViewSet(viewsets.ModelViewSet):
+    queryset = Buy4MeRequest.objects.all()
     serializer_class = Buy4MeRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        """
-        Optimize queryset with prefetch_related for items
-        Filter requests based on user role
-        """
-        queryset = Buy4MeRequest.objects.prefetch_related(
-            Prefetch('items', queryset=Buy4MeItem.objects.order_by('created_at'))
-        )
-        
-        user = self.request.user
-        if not user.is_staff:
-            queryset = queryset.filter(user=user)
-        
-        return queryset.order_by('-created_at')
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -41,35 +33,24 @@ class Buy4MeRequestViewSet(viewsets.ModelViewSet):
         return Buy4MeRequestSerializer
 
     def perform_create(self, serializer):
-        """
-        Create a Buy4Me request with the current user and set city delivery charge if city is provided
-        """
-        # Create the request with the current user
-        instance = serializer.save(user=self.request.user)
-        
-        # If a city was provided, the save method in the model will already set the 
-        # city_delivery_charge based on the city, but we need to calculate the total cost
-        if instance.city:
-            instance.calculate_total_cost()
-        
-        return instance
+        serializer.save(user=self.request.user)
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user: User = self.request.user  # type: ignore
+        if user.is_staff:
+            return queryset
+        return queryset.filter(user=self.request.user)
 
     def perform_update(self, serializer):
         """
-        Update a Buy4Me request and handle city changes
+        Update a Buy4Me request
         """
-        # Get the old city (if any) before saving
-        instance = self.get_object()
-        old_city = instance.city
-        
         # Save the updated instance
         instance = serializer.save()
         
-        # If city has changed, update the city_delivery_charge and recalculate total cost
-        if instance.city != old_city:
-            # The save method in the model will set the city_delivery_charge
-            # based on the new city, but we need to recalculate the total cost
-            instance.calculate_total_cost()
+        # Recalculate total cost
+        instance.calculate_total_cost()
         
         return instance
 

@@ -17,4 +17,5 @@ urlpatterns = [
     path('extras', views.ExtrasView.as_view(), name="get-extras"),
     path('convert-currency/', views.CurrencyConversionAPIView.as_view(), name='convert-currency'),
     path('currencies/', views.CurrencyAPIView.as_view(), name='currencies'),
+    path('dynamic-rates/', views.DynamicRateAPIView.as_view(), name='dynamic-rates'),
 ] 

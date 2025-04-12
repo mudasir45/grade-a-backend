@@ -7,6 +7,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from core.utils import SixDigitIDMixin
+from shipping_rates.models import DynamicRate
 
 
 class Buy4MeRequest(SixDigitIDMixin, models.Model):
@@ -23,8 +24,6 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
     class PaymentStatus(models.TextChoices):
         PENDING = 'PENDING', _('Pending')
         PAID = 'PAID', _('Paid')
-        COD = 'COD', _('COD')
-        COD_PAID = 'COD_PAID', _('COD Paid')
         REFUNDED = 'REFUNDED', _('Refunded')
         CANCELLED = 'CANCELLED', _('Cancelled')
         
@@ -50,21 +49,6 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
         blank=True,
         help_text=_('Driver assigned to deliver this request')
     )
-    city = models.ForeignKey(
-        'accounts.City',
-        on_delete=models.SET_NULL,
-        related_name='buy4me_requests',
-        null=True,
-        blank=True,
-        help_text=_('City for delivery, determines delivery charge and assigned driver')
-    )
-    city_delivery_charge = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=Decimal('0.00'),
-        validators=[MinValueValidator(0)],
-        help_text=_('Delivery charge from warehouse to customer city')
-    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -74,6 +58,18 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
         max_length=20,
         choices=PaymentStatus.choices,
         default=PaymentStatus.PENDING
+    )
+    service_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(0)]
+    )
+    service_fee_percentage = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('10.00'),
+        validators=[MinValueValidator(0)]
     )
     total_cost = models.DecimalField(
         max_digits=10,
@@ -94,7 +90,7 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
         return f"Request #{self.id} by {self.user.username}"
 
     def calculate_total_cost(self):
-        """Calculate total cost including items, store-to-warehouse delivery charges, and city delivery charge"""
+        """Calculate total cost including items and store-to-warehouse delivery charges"""
         # Calculate items total (unit_price * quantity for each item)
         items_total = Decimal('0.00')
         for item in self.items.all():
@@ -103,40 +99,45 @@ class Buy4MeRequest(SixDigitIDMixin, models.Model):
             # Add store-to-warehouse delivery charge
             items_total += item.store_to_warehouse_delivery_charge
         
-        # Add city delivery charge
-        self.total_cost = items_total + self.city_delivery_charge
-        self.save(update_fields=['total_cost'])
+        service_fee = DynamicRate.objects.filter(
+            rate_type=DynamicRate.RateType.BUY4ME_FEE,
+            charge_type=DynamicRate.ChargeType.PERCENTAGE,
+            is_active=True
+        ).first()
+        
+        service_fee_percentage = Decimal('0.10')
+        if service_fee:
+            service_fee_percentage = service_fee.value / 100
+            self.service_fee_percentage = service_fee.value
+        else:
+            service_fee_percentage = Decimal('0.10')
+            self.service_fee_percentage = Decimal('10.00')
+            
+            
+        
+        service_fee_amount = items_total * service_fee_percentage
+        items_total += service_fee_amount
+        
+        
+        
+        # Set total cost to items total
+        self.total_cost = items_total
+        self.service_fee = service_fee_amount
+        
+        self.save(update_fields=['total_cost', 'service_fee', 'service_fee_percentage'])
         return self.total_cost
 
     def save(self, *args, **kwargs):
-        # If city is set but driver is not, try to assign a driver
-        if self.city and not self.driver:
-            # Get active drivers assigned to this city using apps.get_model
-            DriverProfile = apps.get_model('accounts', 'DriverProfile')
-            driver_profiles = DriverProfile.objects.filter(
-                cities=self.city,
-                is_active=True
-            )
-            driver_profile = driver_profiles.first()
-            if driver_profile:
-                self.driver = driver_profile.user
-        
-        # Store old delivery charge to detect changes
-        old_charge = self.city_delivery_charge
-        
-        # If city is set, always update the city_delivery_charge to match the city's delivery charge
-        if self.city:
-            self.city_delivery_charge = self.city.delivery_charge
-        # If city is removed, reset delivery charge to 0
-        elif self.city is None:
-            self.city_delivery_charge = Decimal('0.00')
-            
-        # First save the model
+        # Save the model
         super().save(*args, **kwargs)
         
-        # If delivery charge changed, recalculate total cost
-        if old_charge != self.city_delivery_charge:
-            self.calculate_total_cost()
+        # If we're saving with update_fields and it contains only total_cost and/or service_fee,
+        # don't recalculate to avoid infinite recursion
+        if 'update_fields' in kwargs and set(kwargs['update_fields']).issubset({'total_cost', 'service_fee', 'service_fee_percentage'}):
+            return
+            
+        # Otherwise recalculate total cost (for new objects or when other fields change)
+        self.calculate_total_cost()
 
 
 class Buy4MeItem(SixDigitIDMixin, models.Model):

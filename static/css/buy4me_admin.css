@@ -1,0 +1,1089 @@
+/* Buy4Me Admin Custom Styles */
+
+/* Main tabs */
+.module.aligned > h2 {
+  background-color: #1a237e !important;
+  color: white !important;
+  padding: 15px !important;
+  margin-top: 0 !important;
+  font-size: 18px !important;
+  border-radius: 5px 5px 0 0 !important;
+}
+
+.inline-group {
+  border-radius: 5px !important;
+  overflow: hidden !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+  margin-top: 25px !important;
+  min-height: 250px;
+}
+
+.inline-group h2 {
+  background-color: #1a237e !important;
+  color: white !important;
+  padding: 15px !important;
+  margin-top: 0 !important;
+  font-size: 18px !important;
+}
+
+/* Form sections */
+fieldset.module {
+  border-radius: 5px !important;
+  overflow: hidden !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+  margin-bottom: 25px !important;
+  border: 1px solid #ddd !important;
+}
+
+/* Form rows - better vertical spacing */
+.form-row {
+  padding: 15px 12px !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.form-row > div {
+  padding: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.form-row:last-child {
+  border-bottom: none !important;
+}
+
+.form-row label {
+  font-weight: 600 !important;
+  color: #333 !important;
+  margin-bottom: 8px !important;
+  display: block !important;
+  width: 100% !important;
+}
+
+/* Readonly fields */
+.readonly {
+  font-size: 15px !important;
+  padding: 5px 0 !important;
+}
+
+/* Status and payment badges */
+.field-status_badge span,
+.field-payment_status_badge span {
+  display: inline-block;
+  min-width: 80px;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* Customer info */
+.field-user_info a {
+  text-decoration: none;
+}
+
+/* Items count button */
+.field-items_count a {
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+  min-width: 70px;
+}
+
+/* Action buttons */
+.field-actions_column a {
+  margin-bottom: 5px;
+  text-align: center;
+  display: block;
+  width: 100%;
+  max-width: 120px;
+}
+
+/* Total cost */
+.field-total_cost_display {
+  text-align: right;
+  font-weight: bold;
+  color: #28a745;
+}
+
+/* Created date */
+.field-created_at_display {
+  white-space: nowrap;
+}
+
+/* Cost tables */
+.cost-table {
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.cost-table th {
+  background-color: #1a237e !important;
+  color: white !important;
+}
+
+.cost-table .total {
+  background-color: #1a237e !important;
+}
+
+/* Item tables */
+.items-summary {
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.items-summary th {
+  background-color: #1a237e !important;
+  color: white !important;
+  border-bottom: none;
+}
+
+.items-summary .view-btn {
+  background-color: #28a745 !important;
+}
+
+/* Tablet and mobile optimizations */
+@media (max-width: 1024px) {
+  .field-actions_column a {
+    padding: 8px 10px !important;
+    font-size: 14px !important;
+  }
+
+  .field-status_badge span,
+  .field-payment_status_badge span {
+    padding: 5px 8px !important;
+  }
+}
+
+/* Inline items styling - professional tabular layout */
+.inline-group .tabular {
+  overflow-x: auto !important;
+  display: block !important;
+  max-width: 100% !important;
+  margin-bottom: 15px !important;
+  border-radius: 5px !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+}
+
+.table-responsive {
+  overflow-x: auto !important;
+  display: block !important;
+  width: 100% !important;
+  margin-bottom: 15px !important;
+}
+
+.inline-group .tabular table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  margin: 0 !important;
+  min-width: 900px !important;
+}
+
+/* Header styling */
+.inline-group .tabular th {
+  background-color: #1a237e !important;
+  color: white !important;
+  font-weight: 600 !important;
+  text-align: left !important;
+  padding: 12px 15px !important;
+  font-size: 14px !important;
+  white-space: nowrap !important;
+  border-bottom: 2px solid #0d1560 !important;
+}
+
+/* Cell styling */
+.inline-group .tabular td {
+  padding: 15px !important;
+  vertical-align: middle !important;
+  border-bottom: 1px solid #e0e0e0 !important;
+  background-color: white !important;
+}
+
+/* Alternating row colors */
+.inline-group .tabular tr:nth-child(even) td {
+  background-color: #f9f9f9 !important;
+}
+
+/* Hover effect */
+.inline-group .tabular tr:hover td {
+  background-color: #f0f7ff !important;
+}
+
+/* Original column (with delete checkbox) */
+.inline-group .tabular td.original {
+  width: 1% !important;
+  padding: 15px 5px !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  border-right: 1px solid #e0e0e0 !important;
+  background-color: #f5f5f5 !important;
+}
+
+/* Form input styling */
+.inline-group .tabular td input[type="text"],
+.inline-group .tabular td input[type="number"],
+.inline-group .tabular td input[type="url"],
+.inline-group .tabular td select,
+.inline-group .tabular td textarea {
+  width: 100% !important;
+  padding: 10px !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  background-color: #fff !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  font-size: 14px !important;
+  box-sizing: border-box !important;
+}
+
+/* Focus styles */
+.inline-group .tabular td input:focus,
+.inline-group .tabular td select:focus,
+.inline-group .tabular td textarea:focus {
+  outline: none !important;
+  border-color: #4d90fe !important;
+  box-shadow: 0 0 0 2px rgba(77, 144, 254, 0.2) !important;
+}
+
+/* Add row styling */
+.inline-group .tabular tr.add-row td {
+  background-color: #f8f9fa !important;
+  padding: 15px !important;
+  text-align: right !important;
+  border-top: 2px solid #ddd !important;
+}
+
+.inline-group .tabular tr.add-row a {
+  background-color: #28a745 !important;
+  color: white !important;
+  padding: 10px 18px !important;
+  border-radius: 4px !important;
+  text-decoration: none !important;
+  display: inline-block !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  transition: all 0.2s ease !important;
+}
+
+.inline-group .tabular tr.add-row a:hover {
+  background-color: #218838 !important;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Remove button */
+.inline-group .tabular td .inline-deletelink {
+  display: block !important;
+  width: 100% !important;
+  text-align: center !important;
+  background-color: #dc3545 !important;
+  color: white !important;
+  padding: 5px 8px !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-weight: bold !important;
+  text-decoration: none !important;
+  margin-top: 8px !important;
+}
+
+/* Column widths */
+.inline-group .tabular .field-product_name {
+  width: 20% !important;
+}
+
+.inline-group .tabular .field-product_url {
+  width: 25% !important;
+}
+
+.inline-group .tabular .field-quantity {
+  width: 8% !important;
+}
+
+.inline-group .tabular .field-unit_price {
+  width: 10% !important;
+}
+
+.inline-group .tabular .field-currency {
+  width: 8% !important;
+}
+
+.inline-group .tabular .field-store_to_warehouse_delivery_charge {
+  width: 12% !important;
+}
+
+.inline-group .tabular .field-total_price_display {
+  width: 10% !important;
+  font-weight: bold !important;
+  text-align: right !important;
+  color: #28a745 !important;
+}
+
+/* Section heading for items */
+.inline-group h2 {
+  background-color: #1a237e !important;
+  color: white !important;
+  padding: 15px 20px !important;
+  font-size: 18px !important;
+  margin: 0 !important;
+  border-radius: 5px 5px 0 0 !important;
+}
+
+/* Empty state styling for product items tab */
+.empty-formset-message {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  background-color: #f9f9f9;
+  border-radius: 5px;
+  margin: 20px;
+  padding: 20px;
+  border: 1px dashed #ccc;
+}
+
+.empty-formset-message p {
+  font-size: 16px;
+  color: #666;
+  text-align: center;
+  margin: 0;
+  padding: 20px;
+}
+
+.empty-formset-message span {
+  display: block;
+  margin-top: 10px;
+  font-size: 14px;
+  color: #666;
+}
+
+/* Style the add button */
+.add-row-wrapper {
+  padding: 15px;
+  background-color: #f8f9fa;
+  text-align: right;
+  border-top: 1px solid #ddd;
+}
+
+.add-row-link {
+  background-color: #28a745;
+  color: white;
+  padding: 10px 18px;
+  border-radius: 4px;
+  text-decoration: none;
+  display: inline-block;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+/* Hover effect on the add button */
+.add-row-link:hover {
+  background-color: #218838 !important;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Scroll indicator styling */
+.scroll-indicator {
+  display: block;
+  background-color: #f4f7fc;
+  color: #555;
+  padding: 8px;
+  text-align: center;
+  border-top: 1px solid #ddd;
+  font-size: 12px;
+}
+
+/* Add visible borders to the table */
+.inline-group .tabular table {
+  border: 1px solid #e0e0e0 !important;
+}
+
+/* Fix currency select width */
+.field-currency select {
+  min-width: 80px !important;
+}
+
+/* Improve field sizing and alignment */
+.field-product_name input,
+.field-product_url input {
+  min-width: 200px !important;
+}
+
+.field-quantity input,
+.field-unit_price input,
+.field-store_to_warehouse_delivery_charge input {
+  min-width: 80px !important;
+  text-align: right !important;
+}
+
+/* Custom CSS for Buy4Me Admin interface */
+
+/* Main tabs styling */
+.main-tabs {
+  margin-bottom: 20px;
+}
+
+.main-tabs .nav-tabs {
+  border-bottom: 1px solid #dee2e6;
+}
+
+.main-tabs .nav-link {
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  color: #495057;
+  margin-bottom: -1px;
+}
+
+.main-tabs .nav-link.active {
+  color: #007bff;
+  background-color: #fff;
+  border-color: #dee2e6 #dee2e6 #fff;
+}
+
+/* Form sections */
+fieldset.module {
+  margin-bottom: 30px;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+fieldset.module h2 {
+  background: #79aec8;
+  color: #fff;
+  padding: 12px 15px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Form rows and fields */
+.form-row {
+  padding: 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 -15px;
+}
+
+.form-row > div {
+  padding: 0 15px;
+  margin-bottom: 8px;
+}
+
+.field-box label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.help {
+  margin-left: 5px;
+  cursor: help;
+}
+
+/* Read-only fields */
+.readonly {
+  background: #f8f9fa;
+  padding: 6px 10px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* Badge styling */
+.status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-badge.success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-badge.warning {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.status-badge.danger {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.status-badge.info {
+  background: #d1ecf1;
+  color: #0c5460;
+}
+
+/* Action buttons */
+.actions {
+  margin-top: 20px;
+  text-align: right;
+}
+
+.button,
+input[type="submit"],
+input[type="button"],
+.submit-row input {
+  background: #79aec8;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.button:hover,
+input[type="submit"]:hover,
+input[type="button"]:hover,
+.submit-row input:hover {
+  background: #609ab6;
+}
+
+.button.default,
+input[type="submit"].default,
+.submit-row input.default {
+  background: #417690;
+  font-weight: 600;
+}
+
+.button.default:hover,
+input[type="submit"].default:hover,
+.submit-row input.default:hover {
+  background: #2d5266;
+}
+
+/* Tabular inline styling */
+.inline-group {
+  margin-bottom: 30px;
+}
+
+.tabular.inline-related {
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tabular table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabular table thead th {
+  background: #f5f5f5;
+  padding: 10px 8px;
+  border-bottom: 1px solid #ddd;
+  font-weight: 600;
+  text-align: left;
+  color: #333;
+}
+
+.tabular table tbody td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #eee;
+  vertical-align: middle;
+}
+
+.tabular table tr:hover {
+  background-color: #f8f9fa;
+}
+
+.tabular .table-responsive {
+  overflow-x: auto;
+  margin-bottom: 15px;
+}
+
+.tabular .form-row {
+  display: table-row;
+}
+
+.tabular .form-row td {
+  padding: 8px;
+}
+
+.tabular input,
+.tabular select,
+.tabular textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.tabular .field-product_name input {
+  min-width: 180px;
+}
+
+.tabular .field-product_url input {
+  min-width: 220px;
+}
+
+.tabular .field-quantity input,
+.tabular .field-weight input,
+.tabular .field-unit_price input {
+  width: 80px;
+}
+
+.tabular .original {
+  display: none; /* Hide the original column which often takes space */
+}
+
+.tabular .delete {
+  text-align: center;
+}
+
+.tabular .delete input[type="checkbox"] {
+  width: auto;
+}
+
+/* Add row button */
+.add-row-wrapper {
+  padding: 15px;
+  text-align: center;
+  background-color: #f9f9f9;
+  border-top: 1px solid #eee;
+}
+
+.add-row-link {
+  display: inline-block;
+  padding: 8px 16px;
+  background: #79aec8;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 4px;
+  font-weight: 500;
+  transition: background 0.3s;
+}
+
+.add-row-link:hover {
+  background: #609ab6;
+  text-decoration: none;
+}
+
+/* Empty formset message */
+.empty-formset-message {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+  background: #f9f9f9;
+  border-radius: 4px;
+  margin: 10px 0;
+}
+
+/* Scroll indicator */
+.scroll-indicator {
+  padding: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: #666;
+  background-color: #f5f5f5;
+  border-top: 1px solid #eee;
+}
+
+/* Responsive styles */
+@media (max-width: 991px) {
+  .tabular .field-product_name input,
+  .tabular .field-product_url input {
+    min-width: 0;
+  }
+
+  .form-row > div {
+    width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  fieldset.module {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .tabular .table-responsive {
+    margin-bottom: 0;
+    border: 0;
+  }
+
+  .scroll-indicator {
+    display: block;
+  }
+}
+
+/* Product Items Tabular Inline Styling */
+#buy4meitem_set-group {
+  margin-top: 30px;
+  margin-bottom: 30px;
+}
+
+#buy4meitem_set-group fieldset {
+  padding: 0;
+  border: none;
+}
+
+#buy4meitem_set-group .tabular.inline-related {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+#buy4meitem_set-group h2 {
+  background-color: #f5f8fa;
+  color: #2c3e50;
+  padding: 12px 15px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+#buy4meitem_set-group .table-responsive {
+  overflow-x: auto;
+  padding: 0 1px;
+}
+
+#buy4meitem_set-group table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin: 0;
+}
+
+#buy4meitem_set-group thead th {
+  background-color: #f9fafb;
+  padding: 10px 12px;
+  font-weight: 600;
+  text-align: left;
+  font-size: 13px;
+  border-bottom: 1px solid #e0e0e0;
+  color: #555;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#buy4meitem_set-group thead th.required {
+  color: #333;
+}
+
+#buy4meitem_set-group thead th.required:after {
+  content: "*";
+  color: #e74c3c;
+  margin-left: 3px;
+}
+
+#buy4meitem_set-group tbody tr {
+  border-bottom: 1px solid #eee;
+}
+
+#buy4meitem_set-group tbody tr:last-child {
+  border-bottom: none;
+}
+
+#buy4meitem_set-group tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+#buy4meitem_set-group tbody tr.to-be-deleted {
+  background-color: #ffecec;
+}
+
+#buy4meitem_set-group tbody td {
+  padding: 12px;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#buy4meitem_set-group tbody td.original {
+  display: none;
+}
+
+/* Column widths */
+#buy4meitem_set-group .product_name {
+  width: 20%;
+  min-width: 200px;
+}
+
+#buy4meitem_set-group .product_url {
+  width: 25%;
+  min-width: 250px;
+}
+
+#buy4meitem_set-group .quantity {
+  width: 10%;
+  min-width: 80px;
+}
+
+#buy4meitem_set-group .unit_price {
+  width: 10%;
+  min-width: 100px;
+}
+
+#buy4meitem_set-group .currency {
+  width: 10%;
+  min-width: 80px;
+}
+
+#buy4meitem_set-group .subtotal {
+  width: 15%;
+  min-width: 100px;
+}
+
+/* Form input styles */
+#buy4meitem_set-group .field-product_name input {
+  width: 100%;
+  max-width: 100%;
+}
+
+#buy4meitem_set-group .field-product_url input {
+  width: 100%;
+  max-width: 100%;
+}
+
+#buy4meitem_set-group .field-quantity input {
+  width: 100%;
+  text-align: center;
+}
+
+#buy4meitem_set-group .field-unit_price input {
+  width: 100%;
+  text-align: right;
+}
+
+#buy4meitem_set-group .field-subtotal input {
+  width: 100%;
+  text-align: right;
+  background-color: #f9fafb;
+}
+
+/* Empty form message */
+#buy4meitem_set-group .empty-formset-message {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+}
+
+/* Scroll indicator */
+#buy4meitem_set-group .scroll-indicator {
+  text-align: center;
+  padding: 8px;
+  font-size: 12px;
+  color: #777;
+  background-color: #f9fafb;
+  border-top: 1px solid #eee;
+}
+
+#buy4meitem_set-group .scroll-indicator i {
+  margin-right: 5px;
+}
+
+/* Add row button */
+#buy4meitem_set-group .add-row-wrapper {
+  padding: 15px;
+  text-align: center;
+  background-color: #f9fafb;
+  border-top: 1px solid #e0e0e0;
+}
+
+#buy4meitem_set-group .add-row-link {
+  display: inline-block;
+  padding: 8px 16px;
+  background-color: #3498db;
+  color: white;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13px;
+  transition: background-color 0.2s;
+}
+
+#buy4meitem_set-group .add-row-link:hover {
+  background-color: #2980b9;
+  text-decoration: none;
+}
+
+/* Form errors */
+#buy4meitem_set-group .form-row-errors td {
+  color: #e74c3c;
+  padding: 8px 12px;
+  background-color: #fff9f9;
+}
+
+/* Global styles */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+}
+
+/* Enhanced delete checkbox */
+#buy4meitem_set-group th.delete-header {
+  text-align: center !important;
+  width: 70px !important;
+  min-width: 70px !important;
+  background-color: #f44336 !important;
+  color: white !important;
+}
+
+#buy4meitem_set-group .delete {
+  text-align: center !important;
+  width: 70px !important;
+  min-width: 70px !important;
+  max-width: 70px !important;
+}
+
+#buy4meitem_set-group .delete-container {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+}
+
+#buy4meitem_set-group .delete input[type="checkbox"] {
+  width: 24px !important;
+  height: 24px !important;
+  cursor: pointer !important;
+  margin: 0 auto !important;
+  display: block !important;
+  position: relative !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  border: 2px solid #c1c1c1 !important;
+  border-radius: 4px !important;
+  outline: none !important;
+  transition: all 0.2s ease !important;
+  background-color: white !important;
+}
+
+#buy4meitem_set-group .delete input[type="checkbox"]:checked {
+  background-color: #e74c3c !important;
+  border-color: #e74c3c !important;
+}
+
+#buy4meitem_set-group .delete input[type="checkbox"]:checked:after {
+  content: "✓" !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  text-align: center !important;
+  color: white !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+}
+
+#buy4meitem_set-group .delete input[type="checkbox"]:hover {
+  border-color: #e74c3c !important;
+}
+
+/* Row marked for deletion */
+#buy4meitem_set-group tr.to-be-deleted {
+  background-color: #ffecec !important;
+}
+
+#buy4meitem_set-group tr.to-be-deleted td {
+  color: #999 !important;
+  text-decoration: line-through !important;
+}
+
+#buy4meitem_set-group tr.to-be-deleted input:not([type="checkbox"]),
+#buy4meitem_set-group tr.to-be-deleted select,
+#buy4meitem_set-group tr.to-be-deleted textarea {
+  background-color: #fff2f2 !important;
+  color: #999 !important;
+  border-color: #ffcaca !important;
+  pointer-events: none !important;
+  opacity: 0.7 !important;
+}
+
+#buy4meitem_set-group tr.to-be-deleted .subtotal-value {
+  text-decoration: line-through !important;
+  color: #999 !important;
+}
+
+/* Delete button styles */
+#buy4meitem_set-group .delete-row-button {
+  background-color: #e74c3c !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 4px !important;
+  width: 30px !important;
+  height: 30px !important;
+  cursor: pointer !important;
+  padding: 5px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.2s ease !important;
+  margin-top: 2px !important;
+}
+
+#buy4meitem_set-group .delete-row-button:hover {
+  background-color: #c0392b !important;
+  transform: scale(1.05) !important;
+}
+
+#buy4meitem_set-group .delete-row-button svg {
+  fill: white !important;
+}
+
+/* Make sure form fields appear horizontally aligned */
+#buy4meitem_set-group table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+}
+
+#buy4meitem_set-group tr {
+  display: table-row !important;
+}
+
+#buy4meitem_set-group td {
+  display: table-cell !important;
+  vertical-align: middle !important;
+  padding: 10px !important;
+}
+
+/* Style form inputs to fit properly in cells */
+#buy4meitem_set-group input[type="text"],
+#buy4meitem_set-group input[type="number"],
+#buy4meitem_set-group input[type="url"],
+#buy4meitem_set-group select,
+#buy4meitem_set-group textarea {
+  width: 100% !important;
+  padding: 8px !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+}
+
+/* Ensure consistent height for inputs */
+#buy4meitem_set-group td input,
+#buy4meitem_set-group td select {
+  height: 36px !important;
+}
+
+/* Override any display: flex that might be causing the vertical layout */
+#buy4meitem_set-group .form-row {
+  display: table-row !important;
+}
+
+/* Row deletion effects */
+#buy4meitem_set-group tr.to-be-deleted .delete-row-button {
+  background-color: #999 !important;
+}

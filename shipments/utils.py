@@ -527,7 +527,20 @@ def generate_shipment_receipt(shipment):
 
     # Add COD charge if applicable
     if shipment.payment_method == 'COD' and shipment.cod_amount > 0:
-        cost_data.append(['COD Charge (5%):', f"MYR {format_decimal(shipment.cod_amount)}"])
+        # Get the dynamic COD percentage
+        try:
+            # Import here to avoid circular imports
+            from shipping_rates.models import DynamicRate
+            cod_rate = DynamicRate.objects.filter(
+                rate_type='COD_FEE', 
+                charge_type='PERCENTAGE',
+                is_active=True
+            ).first()
+            cod_percentage = cod_rate.value if cod_rate else 5  # Default to 5% if not found
+        except Exception:
+            cod_percentage = 5  # Default to 5% if error occurs
+            
+        cost_data.append([f'COD Charge ({cod_percentage}%):', f"MYR {format_decimal(shipment.cod_amount)}"])
 
     # Add total cost as the final row
     cost_data.append(['Total Cost:', f"MYR {format_decimal(shipment.total_cost)}"])
@@ -661,7 +674,19 @@ def generate_receipt_table_data(shipment):
     
     # Add COD charge if present
     if shipment.cod_amount and shipment.cod_amount > 0:
-        table_data.append(['COD Fee:', f"MYR {cod_amount}"])
+        # Get the dynamic COD percentage
+        try:
+            from shipping_rates.models import DynamicRate
+            cod_rate = DynamicRate.objects.filter(
+                rate_type='COD_FEE', 
+                charge_type='PERCENTAGE',
+                is_active=True
+            ).first()
+            cod_percentage = cod_rate.value if cod_rate else 5  # Default to 5% if not found
+        except Exception:
+            cod_percentage = 5  # Default to 5% if error occurs
+            
+        table_data.append([f'COD Fee ({cod_percentage}%):', f"MYR {cod_amount}"])
     
     # Add total
     table_data.append(['Total:', f"MYR {total_cost}"])

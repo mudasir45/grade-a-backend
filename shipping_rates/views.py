@@ -10,12 +10,14 @@ from rest_framework.views import APIView
 from accounts.models import City
 
 from .models import (AdditionalCharge, Country, Currency, DimensionalFactor,
-                     Extras, ServiceType, ShippingZone, WeightBasedRate)
+                     DynamicRate, Extras, ServiceType, ShippingZone,
+                     WeightBasedRate)
 from .serializers import (AdditionalChargeSerializer, CountrySerializer,
                           CurrencyConversionSerializer, CurrencySerializer,
-                          DimensionalFactorSerializer, ExtrasSerializer,
-                          ServiceTypeSerializer, ShippingCalculatorSerializer,
-                          ShippingZoneSerializer, WeightBasedRateSerializer)
+                          DimensionalFactorSerializer, DynamicRateSerializer,
+                          ExtrasSerializer, ServiceTypeSerializer,
+                          ShippingCalculatorSerializer, ShippingZoneSerializer,
+                          WeightBasedRateSerializer)
 
 
 @extend_schema(tags=['shipping-rates'])
@@ -350,3 +352,10 @@ class CurrencyAPIView(APIView):
         currencies = Currency.objects.all()
         serializer = CurrencySerializer(currencies, many=True)
         return Response(serializer.data)    
+
+class DynamicRateAPIView(APIView):
+    permission_classes = [permissions.AllowAny]
+    def get(self, request):
+        dynamic_rates = DynamicRate.objects.all()
+        serializer = DynamicRateSerializer(dynamic_rates, many=True)
+        return Response(serializer.data)

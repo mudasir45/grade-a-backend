@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.utils.html import format_html
 
 from .models import (AdditionalCharge, Country, Currency, DimensionalFactor,
-                     Extras, ServiceType, ShippingZone, WeightBasedRate)
+                     DynamicRate, Extras, ServiceType, ShippingZone,
+                     WeightBasedRate)
 
 
 @admin.register(Country)
@@ -113,4 +114,11 @@ class ExtrasAdmin(admin.ModelAdmin):
     ordering = ['name']
 
 admin.site.register(Currency)
+
+@admin.register(DynamicRate)
+class DynamicRateAdmin(admin.ModelAdmin):
+    list_display = ['id', 'rate_type', 'charge_type', 'value', 'is_active']
+    list_filter = ['is_active', 'rate_type', 'charge_type']
+    search_fields = ['rate_type', 'charge_type']
+    ordering = ['rate_type']
 

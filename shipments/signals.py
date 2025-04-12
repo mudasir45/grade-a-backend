@@ -159,8 +159,29 @@ def handle_shipment_payment_method(sender, instance, created, **kwargs):
     Handle payment method and extra charges for shipment
     """
     if instance.payment_method == ShipmentRequest.PaymentMethod.COD:
-        # Calculate COD amount (5% of current total cost)
-        cod_amount = round(instance.total_cost * Decimal("0.05"), 2)
+        # Calculate COD amount using dynamic rate from DynamicRate model
+        try:
+            # Import here to avoid circular imports
+            from shipping_rates.models import DynamicRate
+
+            # Try to get COD fee from DynamicRate
+            cod_rate = DynamicRate.objects.filter(
+                rate_type=DynamicRate.RateType.COD_FEE,
+                charge_type=DynamicRate.ChargeType.PERCENTAGE,
+                is_active=True
+            ).first()
+            
+            if cod_rate:
+                # Use the dynamic rate value
+                cod_percentage = cod_rate.value / 100  # Convert percentage to decimal
+            else:
+                # Fallback to default 5% if no dynamic rate is found
+                cod_percentage = Decimal('0.05')
+                
+            cod_amount = round(instance.total_cost * cod_percentage, 2)
+        except (ImportError, Exception):
+            # Fallback to default 5% if any error occurs
+            cod_amount = round(instance.total_cost * Decimal("0.05"), 2)
         
         # Only update if the COD amount has changed
         if instance.cod_amount != cod_amount:

@@ -373,24 +373,40 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         return f"Shipment #{self.tracking_number or self.id} - {self.status}"
 
     def calculate_total_cost(self):
-        """Calculate total cost including delivery charge and COD charge if applicable"""
-        # Ensure all numeric fields have a valid value to prevent None errors
-        weight_charge = self.weight_charge or Decimal('0')
-        total_additional_charges = self.total_additional_charges or Decimal('0')
-        extras_charges = self.extras_charges or Decimal('0')
-        delivery_charge = self.delivery_charge or Decimal('0')
-        
-        # Calculate subtotal without COD amount
+        """Calculate the total cost of the shipment"""
+        # First calculate subtotal - weight charge + additional charges + extras + delivery charge
         subtotal = (
-            weight_charge + 
-            total_additional_charges +
-            extras_charges +
-            delivery_charge
+            self.weight_charge + 
+            self.total_additional_charges +
+            self.extras_charges +
+            self.delivery_charge
         )
         
-        # Calculate COD amount if payment method is COD (5% of subtotal)
+        # Calculate COD amount if payment method is COD (dynamic fee from DynamicRate model)
         if self.payment_method == self.PaymentMethod.COD:
-            self.cod_amount = round(subtotal * Decimal('0.05'), 2)
+            try:
+                # Import here to avoid circular imports
+                from shipping_rates.models import DynamicRate
+
+                # Try to get COD fee from DynamicRate
+                cod_rate = DynamicRate.objects.filter(
+                    rate_type=DynamicRate.RateType.COD_FEE,
+                    charge_type=DynamicRate.ChargeType.PERCENTAGE,
+                    is_active=True
+                ).first()
+                
+                if cod_rate:
+                    # Use the dynamic rate value
+                    cod_percentage = cod_rate.value / 100  # Convert percentage to decimal
+                else:
+                    # Fallback to default 5% if no dynamic rate is found
+                    cod_percentage = Decimal('0.05')
+                    
+                self.cod_amount = round(subtotal * cod_percentage, 2)
+            except (ImportError, Exception):
+                # Fallback to default 5% if any error occurs
+                self.cod_amount = round(subtotal * Decimal('0.05'), 2)
+                
             return round(subtotal + self.cod_amount, 2)
         else:
             self.cod_amount = Decimal('0')
