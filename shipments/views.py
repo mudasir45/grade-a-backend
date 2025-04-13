@@ -465,6 +465,7 @@ class StaffShipmentsView(APIView):
     )
     def get(self, request, staff_id=None):
         """Get shipments assigned to a specific staff member"""
+        shipment_id = request.query_params.get('shipment_id')
         # Check staff permission
         error_response = self.check_staff_permission(request)
         if error_response:
@@ -477,6 +478,7 @@ class StaffShipmentsView(APIView):
         # If still no staff_id, use the current user's ID
         if not staff_id:
             staff_id = request.user.id
+            
             
         try:
             # Build the base queryset
@@ -1029,7 +1031,6 @@ class ShipmentStatusLocationViewSet(viewsets.ReadOnlyModelViewSet):
             
         return queryset.order_by('display_order', 'status_type')
 
-
 @extend_schema(tags=['shipments'])
 class StaffShipmentStatusUpdateView(APIView):
     """
@@ -1144,9 +1145,6 @@ class StaffShipmentStatusUpdateView(APIView):
                 )
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-
 
 
 @extend_schema(tags=['shipments'])
@@ -1296,7 +1294,7 @@ class StaffShipmentAWBView(APIView):
         p.drawCentredString(receipt_width/2, top_margin - 60, shipment.tracking_number)
         
         # Generate and draw QR code instead of barcode
-        qr_code = QrCodeWidget(shipment.tracking_number)
+        qr_code = QrCodeWidget("https://www.gradeaexpress.com/public/shipment/"+str(shipment.id)+"/update-status")
         bounds = qr_code.getBounds()
         qr_width = bounds[2] - bounds[0]
         qr_height = bounds[3] - bounds[1]

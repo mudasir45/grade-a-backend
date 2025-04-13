@@ -503,7 +503,7 @@ class Buy4MeRequestAdmin(admin.ModelAdmin):
         """
         
         return format_html(
-            '<span title="{}" data-toggle="tooltip" data-html="true"><b>${}</b></span>',
+            '<span title="{}" data-toggle="tooltip" data-html="true"><b>RM {}</b></span>',
             breakdown,
             obj.total_cost
         )

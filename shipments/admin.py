@@ -324,24 +324,24 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
         
         # Build detailed breakdown
         breakdown = f"""
-            Weight Charge: ${obj.weight_charge:.2f}<br>
-            Additional Charges: ${obj.total_additional_charges:.2f}<br>
-            Extras Charges: ${obj.extras_charges:.2f}<br>
-            <b>Subtotal: ${subtotal:.2f}</b><br>
+            Weight Charge: RM {obj.weight_charge:.2f}<br>
+            Additional Charges: RM {obj.total_additional_charges:.2f}<br>
+            Extras Charges: RM {obj.extras_charges:.2f}<br>
+            <b>Subtotal: RM {subtotal:.2f}</b><br>
         """
         
         # Add COD charge if applicable
         if obj.payment_method == 'COD' and obj.cod_amount > 0:
-            breakdown += f"COD Charge (5%): ${obj.cod_amount:.2f}<br>"
+            breakdown += f"COD Charge (5%): RM {obj.cod_amount:.2f}<br>"
             
         # Add delivery charge
-        breakdown += f"<b>Delivery Charge: ${obj.delivery_charge:.2f}</b><br>"
+        breakdown += f"<b>Delivery Charge: RM {obj.delivery_charge:.2f}</b><br>"
         
         # Add total
-        breakdown += f"<b>Total: ${obj.total_cost:.2f}</b>"
+        breakdown += f"<b>Total: RM {obj.total_cost:.2f}</b>"
         
         return format_html(
-            '<span title="{}" data-toggle="tooltip" data-html="true">${}</span>',
+            '<span title="{}" data-toggle="tooltip" data-html="true">RM {}</span>',
             breakdown,
             obj.total_cost
         )

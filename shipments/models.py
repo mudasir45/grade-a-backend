@@ -46,6 +46,8 @@ class ShipmentStatusLocation(models.Model):
         OUT_FOR_DELIVERY = 'OUT_FOR_DELIVERY', _('Out for Delivery')
         DELIVERED = 'DELIVERED', _('Delivered')
         CANCELLED = 'CANCELLED', _('Cancelled')
+        FAILED_DELIVERY = 'FAILED_DELIVERY', _('Failed Delivery')
+        RETURNED = 'RETURNED', _('Returned')
     
     status_type = models.CharField(
         max_length=20,
@@ -91,9 +93,11 @@ class ShipmentStatusLocation(models.Model):
             cls.StatusType.PROCESSING: ShipmentRequest.Status.PROCESSING,
             cls.StatusType.PICKED_UP: ShipmentRequest.Status.PROCESSING,
             cls.StatusType.IN_TRANSIT: ShipmentRequest.Status.IN_TRANSIT,
-            cls.StatusType.OUT_FOR_DELIVERY: ShipmentRequest.Status.IN_TRANSIT,
+            cls.StatusType.OUT_FOR_DELIVERY: ShipmentRequest.Status.OUT_FOR_DELIVERY,
             cls.StatusType.DELIVERED: ShipmentRequest.Status.DELIVERED,
             cls.StatusType.CANCELLED: ShipmentRequest.Status.CANCELLED,
+            cls.StatusType.FAILED_DELIVERY: ShipmentRequest.Status.FAILED_DELIVERY,
+            cls.StatusType.RETURNED: ShipmentRequest.Status.RETURNED,
         }
 
 
@@ -119,6 +123,9 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         IN_TRANSIT = 'IN_TRANSIT', _('In Transit')
         DELIVERED = 'DELIVERED', _('Delivered')
         CANCELLED = 'CANCELLED', _('Cancelled')
+        OUT_FOR_DELIVERY = 'OUT_FOR_DELIVERY', _('Out for Delivery')
+        FAILED_DELIVERY = 'FAILED_DELIVERY', _('Failed Delivery')
+        RETURNED = 'RETURNED', _('Returned')
     
     class PaymentMethod(models.TextChoices):
         ONLINE = 'ONLINE', _('Online Payment')
