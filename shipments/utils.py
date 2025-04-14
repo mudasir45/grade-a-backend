@@ -152,7 +152,8 @@ def calculate_shipping_cost(
             
             # Get applicable rate based on weight
             try:
-                rate = WeightBasedRate.objects.get(
+                # Use filter instead of get to handle multiple matching rates
+                rates = WeightBasedRate.objects.filter(
                     zone=shipping_zone,
                     service_type=service_type,
                     min_weight__lte=chargeable_weight,
@@ -160,9 +161,21 @@ def calculate_shipping_cost(
                     is_active=True
                 )
                 
-                if not rate:
+                if not rates.exists():
                     logger.warning(f"No rate found for weight {chargeable_weight}kg and service {service_type.name}")
                     raise ValidationError(f"No rate found for weight {chargeable_weight}kg and service {service_type.name}")
+                
+                # If multiple rates exist, select the most specific one (narrowest weight range)
+                if rates.count() > 1:
+                    # Order by the smaller weight range (max_weight - min_weight)
+                    rate = sorted(rates, key=lambda r: (r.max_weight - r.min_weight))[0]
+                    logger.info(f"Multiple rates found, selected most specific one: {rate}")
+                else:
+                    rate = rates.first()
+                
+                # Ensure we have a valid rate
+                if rate is None:
+                    raise ValidationError("Failed to retrieve a valid rate after filtering")
                     
                 # Calculate base weight charge
                 weight_charge = chargeable_weight * rate.per_kg_rate
