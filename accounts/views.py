@@ -31,7 +31,6 @@ from .serializers import (CitySerializer, ContactSerializer,
 User = get_user_model()
 
 
-
 @extend_schema(tags=['auth'])
 class PhoneTokenObtainPairView(TokenObtainPairView):
     """
@@ -53,6 +52,7 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [JSONParser, FormParser, MultiPartParser]
+    pagination_class = None  # Disable pagination completely
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -71,6 +71,24 @@ class UserViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(user_type=user_type)
             
         return queryset
+        
+    @extend_schema(
+        summary="List users",
+        description="Get a list of all users",
+        parameters=[
+            OpenApiParameter(
+                name='user_type',
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description='Filter users by type (WALK_IN, BUY4ME, ADMIN, SUPER_ADMIN)',
+                required=False,
+            ),
+        ],
+    )
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
     @extend_schema(
         summary="Get current user",
@@ -149,12 +167,17 @@ class UserViewSet(viewsets.ModelViewSet):
         
         # Active requests (DRAFT, SUBMITTED)
         active_count = user_requests.filter(
-            status__in=['DRAFT', 'SUBMITTED', 'PROCESSING']
+            status__in=['DRAFT', 'SUBMITTED', 'PROCESSING'],
+            # also check if the request have at least one item
+            # check if the request have at least one item
+            items__isnull=False
         ).count()
         
         # Pending payments
         pending_payments_count = user_requests.filter(
-            payment_status='PENDING'
+            payment_status='PENDING',
+            # also check if the request have at least one item
+            items__isnull=False
         ).count()
         
         # Orders in transit (IN_TRANSIT, WAREHOUSE_ARRIVED, SHIPPED_TO_CUSTOMER)
@@ -239,23 +262,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
-    @extend_schema(
-        summary="List users",
-        description="Get a list of all users",
-        parameters=[
-            OpenApiParameter(
-                name='user_type',
-                type=OpenApiTypes.STR,
-                location=OpenApiParameter.QUERY,
-                description='Filter users by type (WALK_IN, BUY4ME, ADMIN, SUPER_ADMIN)',
-                required=False,
-            ),
-        ],
-    )
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-    
-    
+
 # create the singup view 
 
 @extend_schema(

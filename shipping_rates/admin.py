@@ -70,7 +70,7 @@ class WeightBasedRateAdmin(admin.ModelAdmin):
     
     
     def per_kg_rate_display(self, obj):
-        return format_html('<b>${}/kg</b>', obj.per_kg_rate)
+        return format_html('<b>RM {}/kg</b>', obj.per_kg_rate)
     per_kg_rate_display.short_description = 'Per KG Rate'
 
 @admin.register(DimensionalFactor)
@@ -92,7 +92,7 @@ class AdditionalChargeAdmin(admin.ModelAdmin):
     def value_display(self, obj):
         if obj.charge_type == 'PERCENTAGE':
             return format_html('<b>{}%</b>', obj.value)
-        return format_html('<b>${}</b>', obj.value)
+        return format_html('<b>RM {}</b>', obj.value)
     value_display.short_description = 'Value'
     
     def zone_count(self, obj):

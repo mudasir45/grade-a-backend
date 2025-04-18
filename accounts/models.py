@@ -316,7 +316,7 @@ class DriverProfile(SixDigitIDMixin, models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"Driver: {self.user.email}"
+        return f"Driver: {self.user.phone_number}"
     
     def update_stats(self):
         """Update driver statistics"""
