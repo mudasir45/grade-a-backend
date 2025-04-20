@@ -167,12 +167,12 @@ class ShipmentCreateSerializer(serializers.ModelSerializer):
             'description', 'declared_value', 'weight_charge',
             'total_additional_charges', 'total_cost',
             'service_type', 'insurance_required', 'signature_required',
-            'payment_method', 'notes', 'cost_breakdown', 'per_kg_rate'
+            'payment_method', 'notes', 'cost_breakdown', 'per_kg_rate', 'no_of_packages'
         ]
         read_only_fields = [
             'tracking_number', 'status', 'current_location',
             'estimated_delivery', 'tracking_history',
-            'cod_amount', 'payment_status', 'payment_date',
+            'cod_amount', 'payment_status',  'payment_date',
             'transaction_id'
         ]
 

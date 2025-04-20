@@ -135,7 +135,7 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Shipment Information', {
             'fields': (
-                'tracking_number', 'status', 'user', 'staff', 'driver', 'city', 'notes'
+                'tracking_number', 'status', 'user', 'staff', 'driver', 'city', 'no_of_packages', 'notes'
             )
         }),
         ('Sender Information', {
@@ -348,6 +348,9 @@ class ShipmentRequestAdmin(admin.ModelAdmin):
     total_cost_display.short_description = 'Total Cost'
     
     def receipt_download(self, obj):
+        # Force regenerate receipt to ensure it's up to date
+        obj.regenerate_receipt()
+        
         if obj.receipt:
             return format_html(
                 '<a href="{}" class="button" target="_blank">Download Receipt</a>',

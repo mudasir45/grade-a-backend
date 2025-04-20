@@ -182,6 +182,11 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         help_text=_('City for delivery, determines delivery charge and assigned driver')
     )
     
+    no_of_packages = models.PositiveIntegerField(
+        default=1,
+        help_text=_('Number of packages in the shipment')
+    )
+    
     delivery_charge = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -464,8 +469,20 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         # Save the model first
         super().save(*args, **kwargs)
         
-        # Generate receipt if it's a new shipment or status has changed
-        if is_new or self.tracker.has_changed('status'):
+        # Fields that should trigger receipt regeneration when changed
+        receipt_trigger_fields = [
+            'status', 'weight', 'length', 'width', 'height', 'declared_value',
+            'sender_name', 'sender_address', 'sender_country_id', 'sender_phone',
+            'recipient_name', 'recipient_address', 'recipient_country_id', 'recipient_phone',
+            'package_type', 'service_type_id', 'weight_charge', 'total_additional_charges',
+            'extras_charges', 'delivery_charge', 'total_cost', 'no_of_packages'
+        ]
+        
+        # Check if any relevant field has changed
+        should_regenerate = is_new or any(self.tracker.has_changed(field) for field in receipt_trigger_fields)
+        
+        # Generate receipt if needed
+        if should_regenerate:
             # Generate PDF receipt
             pdf_buffer = generate_shipment_receipt(self)
             
@@ -490,6 +507,25 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
             'description': description or dict(self.Status.choices)[status]
         })
         self.save()
+    
+    def regenerate_receipt(self):
+        """Force regeneration of the receipt PDF"""
+        # Generate PDF receipt
+        pdf_buffer = generate_shipment_receipt(self)
+        
+        # Convert BytesIO to bytes
+        pdf_content = pdf_buffer.getvalue()
+        
+        # Save the PDF
+        filename = f'shipment_receipt_{self.tracking_number}.pdf'
+        if self.receipt:
+            self.receipt.delete(save=False)  # Delete old receipt if exists
+        self.receipt.save(filename, ContentFile(pdf_content), save=False)  # Don't trigger save() again
+        
+        # Just update the receipt field without triggering save() again
+        ShipmentRequest.objects.filter(pk=self.pk).update(receipt=self.receipt.name)
+        
+        return self.receipt
 
 
 class SupportTicket(models.Model):

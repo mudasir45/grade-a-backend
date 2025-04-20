@@ -467,7 +467,13 @@ def generate_shipment_receipt(shipment):
         borderPadding=10,
         borderRadius=5
     )
-    elements.append(Paragraph(f"TRACKING NUMBER: {shipment.tracking_number}", tracking_style))
+    
+    # Add package numbering information (1/{no_of_packages})
+    package_info = ""
+    if hasattr(shipment, 'no_of_packages') and shipment.no_of_packages > 1:
+        package_info = f" - Package 1/{shipment.no_of_packages}"
+    
+    elements.append(Paragraph(f"TRACKING NUMBER: {shipment.tracking_number}{package_info}", tracking_style))
     elements.append(Spacer(1, 20))
 
     # Shipping details
@@ -510,6 +516,10 @@ def generate_shipment_receipt(shipment):
         ['Weight:', f"{shipment.weight} kg", 'Dimensions:', f"{shipment.length}x{shipment.width}x{shipment.height} cm"],
         ['Declared Value:', formatted_declared_value, '', ''],
     ]
+    
+    # Add package number information if there are multiple packages
+    if hasattr(shipment, 'no_of_packages') and shipment.no_of_packages > 1:
+        package_info.append(['Package Number:', f"1/{shipment.no_of_packages}", '', ''])
 
     package_table = Table(package_info, colWidths=[1.3*inch, 2.4*inch, 1.3*inch, 2.7*inch])
     package_table.setStyle(TableStyle([
@@ -625,7 +635,11 @@ def generate_shipment_receipt(shipment):
         elements.append(extras_table)
 
     # Footer
-    footer_text = f"""Thank you for choosing Grade-A Express! | Track your shipment: {shipment.tracking_number}"""
+    package_info = ""
+    if hasattr(shipment, 'no_of_packages') and shipment.no_of_packages > 1:
+        package_info = f" (Package 1/{shipment.no_of_packages})"
+    
+    footer_text = f"""Thank you for choosing Grade-A Express! | Track your shipment: {shipment.tracking_number}{package_info}"""
     footer_style = ParagraphStyle(
         'Footer',
         parent=styles['Normal'],
