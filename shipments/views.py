@@ -5,8 +5,9 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Prefetch, Q
-from django.http import FileResponse
+from django.core.exceptions import ValidationError
+from django.db.models import Count, Prefetch, Q, Sum
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django_filters import rest_framework as filters
@@ -26,7 +27,8 @@ from rest_framework.views import APIView
 
 from accounts.models import User
 
-from .models import ShipmentRequest, ShipmentStatusLocation, SupportTicket
+from .models import (ShipmentExtras, ShipmentMessageTemplate, ShipmentPackage,
+                     ShipmentRequest, ShipmentStatusLocation, SupportTicket)
 from .permissions import IsStaffUser
 from .serializers import (ShipmentCreateSerializer, ShipmentMessageSerializer,
                           ShipmentRequestSerializer,
@@ -187,7 +189,11 @@ class ShipmentDetailView(APIView):
         )
         
         if serializer.is_valid():
-            serializer.save()
+            updated_shipment = serializer.save()
+            
+            # Explicitly regenerate the receipt to ensure it's updated
+            updated_shipment.regenerate_receipt()
+            
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -214,9 +220,30 @@ class ShipmentTrackingView(APIView):
     def get(self, request, tracking_number):
         print(tracking_number)
         try:
-            shipment = ShipmentRequest.objects.get(
-                tracking_number=tracking_number.upper()
+            shipment = ShipmentRequest.objects.prefetch_related('packages').get(
+                tracking_number=tracking_number
             )
+            
+            # Get packages information
+            packages_data = []
+            for package in shipment.packages.all().order_by('id'):
+                package_data = {
+                    'id': package.id,
+                    'number': package.number,
+                    'package_type': package.package_type,
+                    'status': package.status,
+                    'status_display': dict(ShipmentPackage.Status.choices)[package.status],
+                    'tracking_history': [
+                        {
+                            'status': update.get('status', ''),
+                            'location': update.get('location', ''),
+                            'timestamp': update.get('timestamp', ''),
+                            'description': update.get('description', '')
+                        }
+                        for update in reversed(package.tracking_history)
+                    ] if package.tracking_history else []
+                }
+                packages_data.append(package_data)
             
             response_data = {
                 'tracking_number': shipment.tracking_number,
@@ -244,17 +271,19 @@ class ShipmentTrackingView(APIView):
                             'width': float(shipment.width),
                             'height': float(shipment.height)
                         }
-                    }
+                    },
+                    'no_of_packages': shipment.no_of_packages
                 },
+                'packages': packages_data,
                 'tracking_history': [
                     {
-                        'status': update['status'],
-                        'location': update['location'],
-                        'timestamp': update['timestamp'],
-                        'description': update['description']
+                        'status': update.get('status', ''),
+                        'location': update.get('location', ''),
+                        'timestamp': update.get('timestamp', ''),
+                        'description': update.get('description', '')
                     }
                     for update in reversed(shipment.tracking_history)
-                ]
+                ] if shipment.tracking_history else []
             }
             
             return Response(response_data)
@@ -336,6 +365,31 @@ class ShipmentRequestViewSet(viewsets.ModelViewSet):
         instance.save()
         return Response(self.get_serializer(instance).data)
 
+    @extend_schema(
+        summary="Download receipt",
+        description="Regenerate and download the latest receipt for a shipment"
+    )
+    @action(detail=True, methods=['get'])
+    def receipt(self, request, pk=None):
+        """
+        Regenerate and return the receipt URL for a shipment.
+        This ensures the receipt always contains the latest data.
+        """
+        instance = self.get_object()
+        
+        # Force regenerate the receipt to ensure it contains the latest data
+        instance.regenerate_receipt()
+        
+        if instance.receipt:
+            return Response({
+                'receipt_url': request.build_absolute_uri(instance.receipt.url),
+                'message': 'Receipt regenerated successfully'
+            })
+        else:
+            return Response(
+                {'error': 'Receipt generation failed'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class LastShipmentView(APIView):
     """
@@ -741,6 +795,9 @@ class StaffShipmentManagementView(APIView):
                 old_status = shipment.status
                 updated_shipment = serializer.save()
                 
+                # Explicitly regenerate the receipt to ensure it's updated
+                updated_shipment.regenerate_receipt()
+                
                 if old_status != updated_shipment.status:
                     updated_shipment.tracking_history.append({
                         'status': updated_shipment.get_status_display(),
@@ -868,6 +925,9 @@ class StaffShipmentManagementView(APIView):
                 # Add tracking history entry if status is being updated
                 old_status = shipment.status
                 updated_shipment = serializer.save()
+                
+                # Explicitly regenerate the receipt to ensure it's updated
+                updated_shipment.regenerate_receipt()
                 
                 if 'status' in request.data and old_status != updated_shipment.status:
                     updated_shipment.tracking_history.append({
@@ -1118,6 +1178,9 @@ class StaffShipmentStatusUpdateView(APIView):
             try:
                 # Update the shipment status
                 updated_shipment = serializer.update(shipment, serializer.validated_data)
+                
+                # Explicitly regenerate the receipt to ensure it's updated
+                updated_shipment.regenerate_receipt()
                 
                 # If the shipment doesn't have a staff member assigned, assign the current user
                 if not updated_shipment.staff:
@@ -1505,6 +1568,182 @@ class StaffShipmentAWBView(APIView):
         except Exception as e:
             return Response(
                 {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+@extend_schema(tags=['shipments'])
+class BulkPackageStatusUpdateView(APIView):
+    """API view for updating status of multiple packages at once"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_packages(self, package_ids, user):
+        """Get packages by their IDs and validate permissions"""
+        if not isinstance(package_ids, list):
+            raise ValueError("package_ids must be a list")
+            
+        # Get all packages at once for efficiency
+        packages = ShipmentPackage.objects.select_related('shipment').filter(id__in=package_ids)
+        
+        if not packages:
+            raise Http404("No packages found with the provided IDs")
+            
+        # Check permissions - only staff or shipment owner can update
+        if not user.is_staff:
+            # For non-staff users, ensure they own all shipments
+            unauthorized_packages = packages.exclude(shipment__user=user)
+            if unauthorized_packages.exists():
+                raise PermissionDenied("You don't have permission to update some of the packages")
+                
+        return packages
+    
+    @extend_schema(
+        summary="Update multiple package statuses",
+        description="Update the status of multiple packages at once",
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'package_ids': {
+                        'type': 'array',
+                        'items': {'type': 'integer'},
+                        'description': 'List of package IDs to update'
+                    },
+                    'status_location_id': {
+                        'type': 'integer',
+                        'description': 'ID of the status location to use'
+                    },
+                    'custom_description': {
+                        'type': 'string',
+                        'description': 'Optional custom description'
+                    }
+                },
+                'required': ['package_ids', 'status_location_id']
+            }
+        }
+    )
+    
+    def post(self, request):
+        """Update status for multiple packages"""
+        # Validate input
+        package_ids = request.data.get('package_ids')
+        status_location_id = request.data.get('status_location_id')
+        
+        if not package_ids:
+            return Response(
+                {'error': 'package_ids is required and must be a non-empty list'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if not status_location_id:
+            return Response(
+                {'error': 'status_location_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Get all packages
+            packages = self.get_packages(package_ids, request.user)
+            
+            # Get the status location
+            try:
+                status_location = ShipmentStatusLocation.objects.get(
+                    id=status_location_id, is_active=True
+                )
+            except ShipmentStatusLocation.DoesNotExist:
+                return Response(
+                    {"error": "Status location not found or is inactive"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+                
+            # Get custom description if provided
+            custom_description = request.data.get('custom_description')
+            
+            # Get the corresponding ShipmentRequest.Status
+            status_mapping = ShipmentStatusLocation.get_status_mapping()
+            package_status = status_mapping.get(status_location.status_type)
+            
+            # Description to use
+            description = custom_description or status_location.description
+            
+            # Track successful and failed updates
+            results = {
+                'success': [],
+                'failed': []
+            }
+            
+            # Update each package
+            for package in packages:
+                try:
+                    # Update the package tracking
+                    old_status = package.status
+                    package.update_tracking(
+                        package_status,
+                        status_location.location_name,
+                        description
+                    )
+                    
+                    # Add to successful updates
+                    results['success'].append({
+                        'id': package.id,
+                        'number': package.number,
+                        'status': package.status,
+                        'status_display': dict(ShipmentPackage.Status.choices)[package.status],
+                        'old_status': old_status,
+                        'shipment_tracking': package.shipment.tracking_number
+                    })
+                except Exception as e:
+                    # Add to failed updates
+                    results['failed'].append({
+                        'id': package.id,
+                        'number': package.number,
+                        'error': str(e)
+                    })
+            
+            # Prepare response message
+            success_count = len(results['success'])
+            failed_count = len(results['failed'])
+            
+            if success_count > 0 and failed_count == 0:
+                message = f"Successfully updated {success_count} package(s)"
+                response_status = status.HTTP_200_OK
+            elif success_count > 0 and failed_count > 0:
+                message = f"Partially updated packages. {success_count} successful, {failed_count} failed."
+                response_status = status.HTTP_207_MULTI_STATUS
+            else:
+                message = "Failed to update any packages"
+                response_status = status.HTTP_400_BAD_REQUEST
+            
+            return Response({
+                'message': message,
+                'results': results,
+                'status_update': {
+                    'status': package_status,
+                    'status_display': dict(ShipmentPackage.Status.choices)[package_status],
+                    'location': status_location.location_name,
+                    'description': description,
+                    'timestamp': timezone.now().isoformat()
+                }
+            }, status=response_status)
+                
+        except PermissionDenied as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        except Http404 as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {'error': f"An unexpected error occurred: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

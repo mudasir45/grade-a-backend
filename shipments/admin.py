@@ -14,8 +14,8 @@ from django.utils.translation import gettext_lazy as _
 from accounts.models import City, DriverProfile, User
 from shipping_rates.models import AdditionalCharge, Extras, ShippingZone
 
-from .models import (ShipmentExtras, ShipmentMessageTemplate, ShipmentRequest,
-                     ShipmentStatusLocation, SupportTicket)
+from .models import (ShipmentExtras, ShipmentMessageTemplate, ShipmentPackage,
+                     ShipmentRequest, ShipmentStatusLocation, SupportTicket)
 
 
 class StaffAssignmentFilter(admin.SimpleListFilter):
@@ -955,3 +955,10 @@ Thank you for choosing Grade-A Express for your shipping needs.
 Best regards,
 The Grade-A Express Team"""
                     )
+
+@admin.register(ShipmentPackage)
+class ShipmentPackageAdmin(admin.ModelAdmin):
+    list_display = ['id', 'shipment', 'package_type', 'status', 'created_at', 'updated_at']
+    list_filter = ['shipment', 'package_type', 'status']
+    search_fields = ['id', 'shipment__id']
+    readonly_fields = ['created_at', 'updated_at']

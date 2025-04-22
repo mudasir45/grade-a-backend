@@ -8,8 +8,16 @@ from accounts.serializers import CitySerializer, UserSerializer
 from shipping_rates.models import (Country, DimensionalFactor, Extras,
                                    ServiceType, ShippingZone, WeightBasedRate)
 
-from .models import (ShipmentExtras, ShipmentMessageTemplate, ShipmentRequest,
-                     ShipmentStatusLocation, SupportTicket)
+from .models import (ShipmentExtras, ShipmentMessageTemplate, ShipmentPackage,
+                     ShipmentRequest, ShipmentStatusLocation, SupportTicket)
+
+
+class ShipmentPackageSerializer(serializers.ModelSerializer):
+    """Serializer for ShipmentPackage model"""
+    
+    class Meta:
+        model = ShipmentPackage
+        fields = ['id', 'package_type', 'number', 'status', 'tracking_history', 'created_at', 'updated_at']
 
 
 class ShipmentRequestSerializer(serializers.ModelSerializer):
@@ -25,6 +33,7 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
     payment_status = serializers.ChoiceField(choices=ShipmentRequest.PaymentStatus.choices)
     extras = serializers.SerializerMethodField()
     additional_charges = serializers.ListField(required=False, write_only=True)
+    packages = ShipmentPackageSerializer(many=True, read_only=True)
 
     class Meta:
         model = ShipmentRequest
@@ -34,7 +43,7 @@ class ShipmentRequestSerializer(serializers.ModelSerializer):
             'current_location', 'estimated_delivery',
             'tracking_history', 'weight_charge', 'total_cost', 'created_at', 'updated_at',
             'cod_amount', 'payment_status', 'payment_date',
-            'transaction_id', 'delivery_charge'
+            'transaction_id', 'delivery_charge', 'packages'
         ]
 
     def get_extras(self, obj):
@@ -300,6 +309,11 @@ class StatusUpdateSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Optional custom description to override the default"
     )
+    package_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="Optional package ID to update a specific package instead of the whole shipment"
+    )
     
     def validate_status_location_id(self, value):
         """Validate that the status location exists and is active"""
@@ -313,10 +327,31 @@ class StatusUpdateSerializer(serializers.Serializer):
                 "Status location not found or is inactive"
             )
     
+    def validate_package_id(self, value):
+        """Validate that the package exists and belongs to the shipment"""
+        if value is not None:
+            try:
+                # Get the shipment from context
+                shipment = self.context.get('shipment')
+                if not shipment:
+                    return value
+                
+                # Validate that package belongs to this shipment
+                package = ShipmentPackage.objects.get(id=value, shipment=shipment)
+                # Store the package for later use
+                self.context['package'] = package
+                return value
+            except ShipmentPackage.DoesNotExist:
+                raise serializers.ValidationError(
+                    "Package not found or does not belong to this shipment"
+                )
+        return value
+    
     def update(self, instance, validated_data):
         """Update the shipment status"""
         status_location = self.context['status_location']
         custom_description = validated_data.get('custom_description')
+        package_id = validated_data.get('package_id')
         
         # Get the corresponding ShipmentRequest.Status
         status_mapping = ShipmentStatusLocation.get_status_mapping()
@@ -325,14 +360,40 @@ class StatusUpdateSerializer(serializers.Serializer):
         # Use custom description if provided, otherwise use the default
         description = custom_description if custom_description else status_location.description
         
-        # Update the tracking information
-        instance.update_tracking(
-            shipment_status,
-            status_location.location_name,
-            description
-        )
-        
-        return instance 
+        if package_id:
+            # Update individual package status
+            try:
+                # Get the package either from context or directly from the database
+                package = self.context.get('package') or ShipmentPackage.objects.get(id=package_id, shipment=instance)
+                
+                # Update the package tracking
+                package.update_tracking(
+                    shipment_status,
+                    status_location.location_name,
+                    description
+                )
+                
+                return instance
+            except ShipmentPackage.DoesNotExist:
+                raise serializers.ValidationError("Package not found or does not belong to this shipment")
+        else:
+            # Update the shipment tracking
+            instance.update_tracking(
+                shipment_status,
+                status_location.location_name,
+                description
+            )
+            
+            # Also update all packages that are not already in a final state
+            final_states = [ShipmentPackage.Status.DELIVERED, ShipmentPackage.Status.CANCELLED]
+            for package in instance.packages.exclude(status__in=final_states):
+                package.update_tracking(
+                    shipment_status,
+                    status_location.location_name,
+                    description
+                )
+            
+            return instance
 
 
 class SupportTicketSerializer(serializers.ModelSerializer):

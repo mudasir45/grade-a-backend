@@ -182,7 +182,7 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         help_text=_('City for delivery, determines delivery charge and assigned driver')
     )
     
-    no_of_packages = models.PositiveIntegerField(
+    no_of_packages = models.IntegerField(
         default=1,
         help_text=_('Number of packages in the shipment')
     )
@@ -526,6 +526,52 @@ class ShipmentRequest(SixDigitIDMixin, models.Model):
         ShipmentRequest.objects.filter(pk=self.pk).update(receipt=self.receipt.name)
         
         return self.receipt
+
+class ShipmentPackage(models.Model):
+    """Model for shipment packages"""
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        PROCESSING = 'PROCESSING', _('Processing')
+        IN_TRANSIT = 'IN_TRANSIT', _('In Transit')
+        DELIVERED = 'DELIVERED', _('Delivered')
+        CANCELLED = 'CANCELLED', _('Cancelled')
+        OUT_FOR_DELIVERY = 'OUT_FOR_DELIVERY', _('Out for Delivery')
+        FAILED_DELIVERY = 'FAILED_DELIVERY', _('Failed Delivery')
+        RETURNED = 'RETURNED', _('Returned')
+        
+    shipment = models.ForeignKey(
+        'ShipmentRequest',
+        on_delete=models.CASCADE,
+        related_name='packages'
+    )
+    package_type = models.CharField(max_length=50)  # e.g., Document, Parcel, Box
+    number = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    tracking_history = models.JSONField(
+        default=list,
+        help_text=_("List of tracking updates with timestamp and location")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # class Meta:
+    #     ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Package #{self.number} - {self.shipment.tracking_number}"
+    
+    def update_tracking(self, status, location, description=None):
+        """Update package tracking information"""
+        self.status = status
+        
+        # Add tracking entry
+        self.tracking_history.append({
+            'status': status,
+            'location': location,
+            'timestamp': timezone.now().isoformat(),
+            'description': description or dict(self.Status.choices)[status]
+        })
+        self.save()
 
 
 class SupportTicket(models.Model):

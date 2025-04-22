@@ -7,7 +7,7 @@ from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
 from .email import send_shipment_created_email, send_status_update_email
-from .models import ShipmentExtras, ShipmentRequest
+from .models import ShipmentExtras, ShipmentPackage, ShipmentRequest
 from .utils import calculate_shipping_cost
 
 logger = logging.getLogger(__name__)
@@ -311,3 +311,21 @@ def recalculate_on_extras_delete(sender, instance, **kwargs):
         except ShipmentRequest.DoesNotExist:
             # Shipment was already deleted, nothing to do
             pass
+
+@receiver(post_save, sender=ShipmentRequest)
+def create_shipment_packages(sender, instance, created, **kwargs):
+    """Create shipment packages when a shipment is created"""
+    if created:
+        logger.info(f"Creating {instance.no_of_packages} package(s) for shipment {instance.tracking_number}")
+        try:
+            # Create packages based on no_of_packages value
+            for i in range(1, instance.no_of_packages + 1):
+                ShipmentPackage.objects.create(
+                    shipment=instance,
+                    package_type=instance.package_type,
+                    number=i,
+                    status=ShipmentPackage.Status.PENDING
+                )
+            logger.info(f"Successfully created {instance.no_of_packages} package(s) for shipment {instance.tracking_number}")
+        except Exception as e:
+            logger.error(f"Error creating packages for shipment {instance.tracking_number}: {str(e)}", exc_info=True)

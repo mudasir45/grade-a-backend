@@ -11,6 +11,7 @@ router.register(r'status-locations', views.ShipmentStatusLocationViewSet, basena
 router.register(r'shipments', views.ShipmentRequestViewSet, basename='shipment')
 
 urlpatterns = [
+     path('bulk-package-status-update/', views.BulkPackageStatusUpdateView.as_view(), name='bulk-package-status-update'),
     path('', views.ShipmentListCreateView.as_view(), name='shipment-list-create'),
     path('viewsets/', include(router.urls)),
     path('<str:pk>/', views.ShipmentDetailView.as_view(), name='shipment-detail'),
@@ -31,6 +32,8 @@ urlpatterns = [
     
     # Status update endpoints
     path('status-update/<str:shipment_id>/', views.StaffShipmentStatusUpdateView.as_view(), name='status-update'),
+    # path('package-status-update/', views.BulkPackageStatusUpdateView.as_view(), name='package-status-update'),
+   
     
     # Message generator endpoint
     path('message/<str:pk>/', views.ShipmentMessageGeneratorView.as_view(), name='shipment-message'),
@@ -40,4 +43,5 @@ urlpatterns = [
     
     # User shipment history endpoint (staff only)
     path('user-shipments/<str:user_id>/', views.UserShipmentHistoryView.as_view(), name='user-shipment-history'),
+    
 ] 
