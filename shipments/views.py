@@ -712,6 +712,20 @@ class StaffShipmentManagementView(APIView):
             # Make a copy of the request data
             data = request.data.copy()
             
+            # Handle city update separately since it's marked as read_only in serializer
+            city_id = data.get('city')
+            if city_id and city_id != str(shipment.city_id if shipment.city else ''):
+                try:
+                    from accounts.models import City
+                    city = City.objects.get(id=city_id)
+                    shipment.city = city
+                    shipment.save(update_fields=['city'])
+                except City.DoesNotExist:
+                    return Response(
+                        {'error': f'City with ID {city_id} does not exist'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
             # Calculate shipping cost if relevant fields are present
             recalculate_prices = any(field in data for field in [
                 'weight', 'length', 'width', 'height', 'sender_country', 
@@ -756,7 +770,7 @@ class StaffShipmentManagementView(APIView):
                 )
                 
                 # Check for errors
-                if cost_breakdown['errors']:
+                if cost_breakdown.get('errors'):
                     return Response(
                         {'errors': cost_breakdown['errors']},
                         status=status.HTTP_400_BAD_REQUEST
@@ -842,6 +856,20 @@ class StaffShipmentManagementView(APIView):
             # Make a copy of the request data
             data = request.data.copy()
             
+            # Handle city update separately since it's marked as read_only in serializer
+            city_id = data.get('city')
+            if city_id and city_id != str(shipment.city_id if shipment.city else ''):
+                try:
+                    from accounts.models import City
+                    city = City.objects.get(id=city_id)
+                    shipment.city = city
+                    shipment.save(update_fields=['city'])
+                except City.DoesNotExist:
+                    return Response(
+                        {'error': f'City with ID {city_id} does not exist'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
             # Calculate shipping cost if relevant fields are being updated
             recalculate_prices = any(field in data for field in [
                 'weight', 'length', 'width', 'height', 'sender_country', 
@@ -886,7 +914,7 @@ class StaffShipmentManagementView(APIView):
                 )
                 
                 # Check for errors
-                if cost_breakdown['errors']:
+                if cost_breakdown.get('errors'):
                     return Response(
                         {'errors': cost_breakdown['errors']},
                         status=status.HTTP_400_BAD_REQUEST
