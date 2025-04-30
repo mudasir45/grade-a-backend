@@ -93,7 +93,6 @@ def recalculate_shipping_cost(sender, instance, **kwargs):
             
         # Update instance fields with the new cost breakdown
         instance.weight_charge = cost_breakdown['weight_charge']
-        instance.service_charge = cost_breakdown['service_price']
         instance.delivery_charge = cost_breakdown['city_delivery_charge']
         
         # Ensure per_kg_rate is correctly set
@@ -257,7 +256,6 @@ def recalculate_on_extras_change(sender, instance, **kwargs):
                 
             # Update shipment fields with the new cost breakdown
             shipment.weight_charge = cost_breakdown['weight_charge']
-            shipment.service_charge = cost_breakdown['service_price']
             shipment.delivery_charge = cost_breakdown['city_delivery_charge']
             
             # Ensure per_kg_rate is correctly set
@@ -280,7 +278,6 @@ def recalculate_on_extras_change(sender, instance, **kwargs):
             # Save the shipment with updated fields only to prevent recursion
             ShipmentRequest.objects.filter(pk=shipment.pk).update(
                 weight_charge=shipment.weight_charge,
-                service_charge=shipment.service_charge,
                 delivery_charge=shipment.delivery_charge,
                 per_kg_rate=shipment.per_kg_rate,
                 total_additional_charges=shipment.total_additional_charges,
@@ -329,3 +326,58 @@ def create_shipment_packages(sender, instance, created, **kwargs):
             logger.info(f"Successfully created {instance.no_of_packages} package(s) for shipment {instance.tracking_number}")
         except Exception as e:
             logger.error(f"Error creating packages for shipment {instance.tracking_number}: {str(e)}", exc_info=True)
+
+@receiver(pre_save, sender=ShipmentRequest)
+def update_driver_on_city_change(sender, instance, **kwargs):
+    """
+    Automatically update the assigned driver when the city of the shipment changes.
+    Also refreshes the driver assignment even when saving without changing the city.
+    The driver will be selected from those assigned to the current city.
+    """
+    if not instance.pk:  # Skip for new instances
+        return
+        
+    try:
+        old_instance = sender.objects.get(pk=instance.pk)
+        
+        # Update driver in two cases:
+        # 1. When city has changed
+        # 2. When saving a record with an existing city (to refresh driver assignments)
+        city_changed = old_instance.city_id != instance.city_id
+        
+        if (city_changed and instance.city_id) or (not city_changed and instance.city_id):
+            if city_changed:
+                logger.info(f"City changed for shipment {instance.id} from {old_instance.city_id} to {instance.city_id}")
+            else:
+                logger.info(f"Refreshing driver assignment for shipment {instance.id} with city {instance.city_id}")
+            
+            # Import here to avoid circular imports
+            from accounts.models import DriverProfile, User
+
+            # Find active drivers for this city
+            city_drivers = DriverProfile.objects.filter(
+                cities__id=instance.city_id,
+                is_active=True,
+                user__user_type=User.UserType.DRIVER
+            )
+            
+            if city_drivers.exists():
+                # Select a driver (basic implementation - you may want to improve this with 
+                # load balancing, driver availability checks, etc.)
+                # For now, we'll pick the first available driver
+                driver_profile = city_drivers.first()
+                if driver_profile and hasattr(driver_profile, 'user'):
+                    # Only update if the driver is different from the current one
+                    if instance.driver != driver_profile.user:
+                        instance.driver = driver_profile.user
+                        logger.info(f"Assigned driver {driver_profile.user.id} to shipment {instance.id}")
+            else:
+                logger.warning(f"No active drivers found for city ID {instance.city_id}")
+                # Optional: Leave the current driver or set to None
+                instance.driver = None
+                
+    except ObjectDoesNotExist:
+        # Instance is new, no need for update
+        pass
+    except Exception as e:
+        logger.error(f"Error updating driver on city change: {str(e)}", exc_info=True)
