@@ -125,6 +125,10 @@ def handle_shipment_notifications(sender, instance, created, **kwargs):
     """
     Handle email notifications for shipment creation and status updates
     """
+    # TEMPORARILY DISABLED TO PREVENT SMTP ERRORS DURING TESTING
+    # Remove this return statement when email is properly configured
+    return
+    
     try:
         if created:
             logger.info(f"Sending creation notification for shipment {instance.tracking_number}")
@@ -148,7 +152,7 @@ def handle_shipment_notifications(sender, instance, created, **kwargs):
             exc_info=True
         )
         if settings.DEBUG:
-            raise  # Re-raise the exception in debug mode 
+            raise  # Re-raise the exception in debug mode
         
 
 

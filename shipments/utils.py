@@ -177,8 +177,11 @@ def calculate_shipping_cost(
                 if rate is None:
                     raise ValidationError("Failed to retrieve a valid rate after filtering")
                     
-                # Calculate base weight charge
-                weight_charge = chargeable_weight * rate.per_kg_rate
+                # Calculate base weight charge (if the wight is less then 1kg, the rate is 1kg)
+                if chargeable_weight < 1:
+                    weight_charge = rate.per_kg_rate
+                else:
+                    weight_charge = chargeable_weight * rate.per_kg_rate
                 cost_breakdown['weight_charge'] = round(weight_charge, 2)
                 
                 # Add per kg rate for reference
