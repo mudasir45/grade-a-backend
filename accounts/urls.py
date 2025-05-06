@@ -42,6 +42,10 @@ urlpatterns = [
     # Support ticket endpoints
     path('tickets/', views.SupportTicketListCreateView.as_view(), name='ticket-list-create'),
     path('tickets/<str:ticket_number>/', views.SupportTicketDetailView.as_view(), name='ticket-detail'),
+    
+    # Assign driver to shipment
+    path('assign-driver-to-shipment/', views.AssignDriverToShipmentView.as_view(), name='assign-driver-to-shipment'),
+    path('drivers/', views.DriversListView.as_view(), name='drivers-list'),
 ]
 
 urlpatterns += router.urls

@@ -15,15 +15,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from accounts.models import City, Contact, DriverPayment, Store, UserCountry
+from accounts.models import (City, Contact, DriverPayment, DriverProfile,
+                             Store, UserCountry)
 from buy4me.models import Buy4MeRequest
 from shipments.models import ShipmentRequest, SupportTicket
 from shipments.serializers import (ShipmentRequestSerializer,
                                    SupportTicketSerializer)
 from shipping_rates.models import Country
 
-from .serializers import (CitySerializer, ContactSerializer,
-                          DriverPaymentSerializer,
+from .serializers import (AssignDriverToShipmentSerializer, CitySerializer,
+                          ContactSerializer, DriverPaymentSerializer,
                           PhoneTokenObtainPairSerializer, StoreSerializer,
                           UserCountrySerializer, UserCreateSerializer,
                           UserSerializer)
@@ -584,3 +585,75 @@ class SupportTicketDetailView(APIView):
 
         ticket.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+    
+
+class AssignDriverToShipmentView(APIView):
+   
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request):
+        driver_id = request.data.get('driver_id')
+        shipment_id = request.data.get('shipment_id')
+        driver_user = User.objects.get(id=driver_id, user_type='DRIVER')
+        
+        # check if the driver is a driver
+        if not driver_user:
+            return Response({'error': 'The specified user is not a driver'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        driver_profile = DriverProfile.objects.get(user=driver_user)
+        if not driver_profile:
+            return Response({'error': 'The specified user is not a driver'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # check if the driver is active
+        if not driver_profile.is_active:
+            return Response({'error': 'The specified driver is not active'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        shipment = ShipmentRequest.objects.get(id=shipment_id)
+        if not shipment:
+            return Response({'error': 'The specified shipment does not exist'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        shipment.driver = driver_user
+        shipment.save()
+        
+        return Response({'message': 'Driver assigned to shipment successfully'}, status=status.HTTP_200_OK)
+    
+
+@extend_schema(
+    tags=['drivers'],
+    summary="List all drivers",
+    description="Returns a list of all users with DRIVER user type who have a driver profile",
+    parameters=[
+        OpenApiParameter(
+            name='is_active',
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description='Filter drivers by active status',
+            required=False,
+        ),
+    ],
+    responses={200: UserSerializer(many=True)}
+)
+class DriversListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        # First get all users who are drivers
+        drivers = User.objects.filter(user_type='DRIVER')
+        
+        # Filter to only include drivers who have a driver profile
+        drivers_with_profiles = drivers.filter(driver_profile__isnull=False)
+        
+        # Filter by active status if provided
+        drivers_with_profiles = drivers_with_profiles.filter(driver_profile__is_active=True)
+        
+        serializer = UserSerializer(drivers_with_profiles, many=True)
+        return Response(serializer.data)
+    
+    
+    
+    
+    
+    
+    
+    

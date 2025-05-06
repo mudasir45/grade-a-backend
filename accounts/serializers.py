@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from accounts.models import (City, Contact, DeliveryCommission, DriverPayment,
                              DriverProfile, Store, UserCountry)
+from shipments.models import ShipmentRequest
 
 User = get_user_model()
 
@@ -205,4 +206,39 @@ class BulkDriverPaymentSerializer(serializers.Serializer):
         child=serializers.CharField(),
         help_text="List of request IDs of the specified type"
     )
+
+
+class AssignDriverToShipmentSerializer(serializers.Serializer):
+    shipment_id = serializers.CharField()
+    driver_id = serializers.CharField()
+    
+    def validate_shipment_id(self, value):
+        try:
+            ShipmentRequest.objects.get(id=value)
+            return value
+        except ShipmentRequest.DoesNotExist:
+            raise serializers.ValidationError("Shipment not found")
+    
+    def validate_driver_id(self, value):
+        try:
+            driver = User.objects.get(id=value, user_type='DRIVER')
+            if not DriverProfile.objects.filter(user=driver).exists():
+                raise serializers.ValidationError("Driver profile not found")
+            return value
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Driver not found")
+    
+    def create(self, validated_data):
+        shipment = ShipmentRequest.objects.get(id=validated_data['shipment_id'])
+        driver = User.objects.get(id=validated_data['driver_id'])
+        
+        shipment.driver = driver
+        shipment.save()
+        return shipment
+    
+    def update(self, instance, validated_data):
+        # Not used for this serializer
+        return instance
+    
+    
 

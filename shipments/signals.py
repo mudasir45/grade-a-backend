@@ -334,8 +334,8 @@ def create_shipment_packages(sender, instance, created, **kwargs):
 @receiver(pre_save, sender=ShipmentRequest)
 def update_driver_on_city_change(sender, instance, **kwargs):
     """
-    Automatically update the assigned driver when the city of the shipment changes.
-    Also refreshes the driver assignment even when saving without changing the city.
+    Automatically update the assigned driver when the city of the shipment changes,
+    but only if no driver is manually assigned or if the force_auto_assign flag is set.
     The driver will be selected from those assigned to the current city.
     """
     if not instance.pk:  # Skip for new instances
@@ -344,16 +344,29 @@ def update_driver_on_city_change(sender, instance, **kwargs):
     try:
         old_instance = sender.objects.get(pk=instance.pk)
         
-        # Update driver in two cases:
-        # 1. When city has changed
-        # 2. When saving a record with an existing city (to refresh driver assignments)
+        # Check if this is a manual driver assignment that should be respected
+        # If the driver has been manually set and is different from the old one, don't override it
+        driver_manually_changed = old_instance.driver_id != instance.driver_id and instance.driver_id is not None
+        
+        # Check if auto-assignment should be forced (useful for admin actions)
+        force_auto_assign = getattr(instance, 'force_auto_assign', False)
+        
+        # Update driver in these cases:
+        # 1. When city has changed AND no driver is manually assigned
+        # 2. When force_auto_assign is True
+        # 3. When no driver is assigned and the city exists
         city_changed = old_instance.city_id != instance.city_id
         
-        if (city_changed and instance.city_id) or (not city_changed and instance.city_id):
+        if ((city_changed and instance.city_id and not driver_manually_changed) or 
+            force_auto_assign or 
+            (instance.city_id and instance.driver_id is None)):
+            
             if city_changed:
                 logger.info(f"City changed for shipment {instance.id} from {old_instance.city_id} to {instance.city_id}")
+            elif force_auto_assign:
+                logger.info(f"Forcing automatic driver assignment for shipment {instance.id}")
             else:
-                logger.info(f"Refreshing driver assignment for shipment {instance.id} with city {instance.city_id}")
+                logger.info(f"No driver assigned for shipment {instance.id} with city {instance.city_id}")
             
             # Import here to avoid circular imports
             from accounts.models import DriverProfile, User
@@ -377,8 +390,11 @@ def update_driver_on_city_change(sender, instance, **kwargs):
                         logger.info(f"Assigned driver {driver_profile.user.id} to shipment {instance.id}")
             else:
                 logger.warning(f"No active drivers found for city ID {instance.city_id}")
-                # Optional: Leave the current driver or set to None
-                instance.driver = None
+                # If no drivers found and no manual assignment, set to None
+                if not driver_manually_changed:
+                    instance.driver = None
+        elif driver_manually_changed:
+            logger.info(f"Manual driver assignment for shipment {instance.id} to driver {instance.driver_id}")
                 
     except ObjectDoesNotExist:
         # Instance is new, no need for update
