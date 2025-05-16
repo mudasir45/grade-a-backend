@@ -102,6 +102,7 @@ class DriverShipmentList(generics.ListAPIView):
     """
     serializer_class = ShipmentRequestSerializer
     permission_classes = [permissions.IsAuthenticated, IsDriver]
+    pagination_class = None
     
     def get_queryset(self):
         """Get shipments assigned to the driver"""
